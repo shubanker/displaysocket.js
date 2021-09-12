@@ -87,7 +87,7 @@ function Merger() {
       }
 
       //console.log(totalSlices);
-      for (var i = 1; i <= totalSlices; i++) {
+      for (var i = 1; i <= totalSlices + 1; i++) {
         var slice = slices[i];
         if (slice) {
           found++;
