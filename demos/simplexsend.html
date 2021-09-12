@@ -8,6 +8,15 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
+    <style>
+      @media screen and (min-width: 850px) {
+        #queueList {
+          position: absolute;
+          top: 1rem;
+          right: 1rem;
+        }
+      }
+    </style>
   </head>
   <body>
     <button onclick="displaySocket.nextVideoSource();">Next camera</button>
@@ -61,7 +70,7 @@
         var reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = function (e) {
-          displaySocket.send(reader.result,file.name);
+          displaySocket.send(reader.result, file.name);
         };
       });
       document
