@@ -18,7 +18,9 @@ function Video(videoElement, canvas) { // jshint ignore:line
 
     if( MediaStreamTrack.getSources) {
         MediaStreamTrack.getSources(getSources);
-    } else {
+    } else if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+        navigator.mediaDevices.enumerateDevices().then(getSources);
+    }else {
         start();
     }
 
@@ -26,11 +28,9 @@ function Video(videoElement, canvas) { // jshint ignore:line
         //console.log(sources);
         for(var i = 0; i < sources.length; i++) {
             var source = sources[i];
-            if( source.hasOwnProperty('kind')) {
-                if( source.kind === 'video') {
-                    //console.log(source);
-                    videoSources.push(source);
-                }
+            if( source.kind === 'video'|| source.kind === 'videoinput') {
+                //console.log(source);
+                videoSources.push(source);
             }
         }
         start(videoSources[currentVideoSource]);
@@ -42,15 +42,21 @@ function Video(videoElement, canvas) { // jshint ignore:line
         var videoConstraints = {};
         if( source) {
             videoConstraints = {
-                optional: [{ sourceId: source.id }]
+                optional: [{ sourceId: source.id || source.deviceId }]
             };
         } else {
             videoConstraints = true;
         }
 
         if( videoStream) {
+            if(videoStream.stop){
             videoStream.stop();
             videoElement.src = null;
+            }else{
+                videoStream.getTracks().forEach(function(stream) {
+                    stream.stop();
+                });
+            }
         }
 
         //console.log(source.id);

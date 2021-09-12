@@ -105,7 +105,7 @@ function scanResultCallback(result) {
     if( merged ) {
         console.log('done:', merged);
         ds.finished = true;
-        ds.receiveDone(merged);
+        ds.receiveDone(merged,merger.getName());
     }
     ds.reportProgress();
 }
@@ -132,14 +132,17 @@ ds.duplexSend = function() {
     ds.duplexLoopTimeout = setTimeout(ds.duplexSend, ds.sendingInterval);
 };
 
-ds.iface.send = function(data) {
+ds.iface.send = function(data,name) {
     if( ! ds.output ) {
         console.error('Tried to send data without supplying output element');
         return;
     }
+    clearTimeout(ds.sendLoopTimeout);
     ds.sending = true;
     //console.log(data);
-    slicer.setData(data);
+    slicer.setData(data,name);
+    ds.fireEvent('sliceCountChange', [slicer.getSlices().length]);
+
     if( ds.videoElement ) {
         // sender has video specified so it's a duplex sender
 
@@ -165,11 +168,12 @@ ds.receiveLoop = function() {
 ds.iface.onmessage = function() {};
 ds.iface.onprogress = function() {};
 
-ds.receiveDone = function(message) {
+ds.receiveDone = function(message,name) {
     var e = {};
     e.data = message;
     ds.endTime = performance.now();
     e.time = ds.endTime - ds.startTime;
+    e.name=name;
 
     ds.iface.onmessage(e);
     ds.fireEvent('message', [e]);
@@ -209,7 +213,19 @@ ds.iface.nextVideoSource = function() {
         console.warn('tried to change video source but there was no video');
     }
 };
-
+ds.iface.stop= function() {
+    clearTimeout(ds.sendLoopTimeout);
+}
+ds.iface.setSlice= function(value) {
+    ds.sliceSize=+value||250
+}
+ds.iface.setInterval= function(value) {
+    ds.baseInterval=+value||30
+    ds.sendingInterval=ds.baseInterval * 4;
+}
+ds.iface.setQueue= function(value) {
+    slicer.setQueue(value);
+}
 // event functions based on http://stackoverflow.com/a/10979055/2324209
 ds.events = {};
 ds.iface.addEventListener = function(name, handler) {

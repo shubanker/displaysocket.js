@@ -1,18 +1,27 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="utf-8">
+  <head>
+    <meta charset="utf-8" />
     <title>Simplex Send Demo</title>
-    <meta name="description" content="DisplaySocket.js simplex send demo">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-</head>
-<body>
+    <meta name="description" content="DisplaySocket.js simplex send demo" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+  </head>
+  <body>
     <button onclick="displaySocket.nextVideoSource();">Next camera</button>
-    <input id="file-input" type="file">
+    <input id="file-input" type="file" />
+    <input type="text" placeholder="sliceSize" id="sliceSize" value="250" />
+    <input type="text" placeholder="interval" id="interval" value="30" />
+    <span>Number of slices <span id="sliceCount">0</span></span>
     <script src="../dist/displaysocket.js"></script>
-    <div style='margin:15px;background:black;' id="writer-output"></div>
+    <div style="margin: 15px; background: black" id="writer-output"></div>
+    <div id="queueList">
+      <textarea name="" id="pending" cols="30" rows="10"></textarea>
+    </div>
     <script>
-        /*
+      /*
         // shake the output to prevent getting stuck when camera not moving
         var outputElement = document.getElementById('writer-output');
         setInterval(function() {
@@ -23,19 +32,22 @@
         */
     </script>
     <script>
-        var outputElement = document.getElementById('writer-output');
-        var size = Math.min(window.innerHeight, window.innerWidth);
-        console.log('sizes',window.innerHeight, window.innerWidth);
-        size -= parseInt(outputElement.style.margin) * 4;
-        console.log('size:', size);
-        outputElement.style.width = size + 'px';
-        outputElement.style.height = size + 'px';
-        var fileInput = document.getElementById('file-input');
-        var displaySocket = new DisplaySocket({
-            output: outputElement,
-        });
+      var outputElement = document.getElementById("writer-output");
+      var size = Math.min(window.innerHeight, window.innerWidth);
+      console.log("sizes", window.innerHeight, window.innerWidth);
+      size -= parseInt(outputElement.style.margin) * 4;
+      console.log("size:", size);
+      outputElement.style.width = size + "px";
+      outputElement.style.height = size + "px";
+      var fileInput = document.getElementById("file-input");
+      var displaySocket = new DisplaySocket({
+        output: outputElement,
+      });
+      displaySocket.addEventListener("sliceCountChange", function (slice) {
+        document.getElementById("sliceCount").innerText = slice;
+      });
 
-        /*
+      /*
         // handy if you don't want to select a file every time
         var sendData = '';
         for(var i = 0; i < 100; i++) {
@@ -44,14 +56,31 @@
         displaySocket.send(sendData);
         /**/
 
-        fileInput.addEventListener('change', function(e) {
-            var file = e.target.files[0];
-            var reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = function(e) {
-                displaySocket.send(reader.result);
-            }
+      fileInput.addEventListener("change", function (e) {
+        var file = e.target.files[0];
+        var reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = function (e) {
+          displaySocket.send(reader.result,file.name);
+        };
+      });
+      document
+        .getElementById("sliceSize")
+        .addEventListener("change", function (e) {
+          displaySocket.stop();
+          displaySocket.setSlice(parseInt(e.target.value));
+          fileInput.dispatchEvent(new Event("change"));
+        });
+      document
+        .getElementById("interval")
+        .addEventListener("change", function (e) {
+          displaySocket.setInterval(parseInt(e.target.value));
+        });
+      document
+        .getElementById("pending")
+        .addEventListener("change", function (e) {
+          displaySocket.setQueue(e.target.value);
         });
     </script>
-</body>
+  </body>
 </html>

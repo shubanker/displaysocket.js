@@ -4527,58 +4527,81 @@ ds.wait = ctor.wait || false;
 /* global ds */
 /* global utils */
 
-function Slicer(data) { // jshint ignore:line
-    'use strict';
-    var sliceSize = ds.sliceSize;
-    var currentSlice = -1; // so when we call nextSlice we get 0
-    data = data || null;
+function Slicer(data) {
+  // jshint ignore:line
+  "use strict";
+  var sliceSize = ds.sliceSize;
+  var currentSlice = -1; // so when we call nextSlice we get 0
+  data = data || null;
 
-    var slices = null;
-    if(data) {
-        slices = slice(data);
+  var slices = null;
+  var queuedSlices = null;
+  if (data) {
+    slices = slice(data);
+  }
+
+  function slice(data, name) {
+    sliceSize = ds.sliceSize;
+    var amount = Math.floor(data.length / sliceSize);
+    var result = [];
+    var wholeChecksum = utils.hashCode(data);
+    for (var i = 0; i <= amount + 1; i++) {
+      if (i === 0) {
+        result[i] =
+          i +
+          "/" +
+          amount +
+          "/" +
+          (name || "download") +
+          "/" +
+          wholeChecksum +
+          "$";
+      } else {
+        var part = data.substr((i - 1) * sliceSize, sliceSize);
+        result[i] = i + "/" + utils.hashCode(part) + "$";
+        result[i] += part;
+      }
     }
+    return result;
+  }
 
-    function slice(data) {
-        var amount = Math.floor(data.length / sliceSize);
-        var result = [];
-        var wholeChecksum = utils.hashCode(data);
-        for(var i = 0; i <= amount + 1; i++) {
+  return {
+    setData: function (data, name) {
+      slices = slice(data, name);
+      queuedSlices = slices;
+    },
 
-            if(i === 0) {
-                result[i] = i + '/' + amount + '/' + wholeChecksum + '$';
-            } else {
-                var part = data.substr((i-1)*sliceSize, sliceSize);
-                result[i] = i + '/' + utils.hashCode(part) + '$';
-                result[i] += part;
-            }
-        }
-        return result;
-    }
+    getSlices: function () {
+      return slices;
+    },
 
-    return {
+    nextSlice: function () {
+      currentSlice = (currentSlice + 1) % queuedSlices.length;
+      return queuedSlices[currentSlice];
+    },
+    setQueue: function (queue) {
+      if (queue) {
+        queuedSlices = [];
+        queue.split(",").forEach(function (index) {
+          index = index.trim();
+          if (slices[index]) {
+            queuedSlices.push(slices[index]);
+          }
+        });
+      }
+      if (!queuedSlices.length || !queue) {
+        queuedSlices = slices;
+      }
+    },
 
-        setData: function(data) {
-            slices = slice(data);
-        },
+    getCurrentSlice: function () {
+      return slices[currentSlice];
+    },
 
-        getSlices: function() {
-            return slices;
-        },
-
-        nextSlice: function() {
-            currentSlice = (currentSlice + 1) % slices.length;
-            return slices[currentSlice];
-        },
-
-        getCurrentSlice: function() {
-            return slices[currentSlice];
-        },
-
-        getCurrentSliceIndex: function() {
-            return currentSlice;
-        }
-
-    };
+    getCurrentSliceIndex: function () {
+      return currentSlice;
+    },
+  };
 }
 
 /* global QRCode */
@@ -4652,114 +4675,119 @@ function Reader(callback) { // jshint ignore:line
 
 /* global utils */
 
-function Merger() { // jshint ignore:line
-    'use strict';
-    var slices = [];
-    var current = 0;
-    var total = null;
-    var checksum = null;
-    var previous = null;
+function Merger() {
+  // jshint ignore:line
+  "use strict";
+  var slices = [];
+  var current = 0;
+  var total = null;
+  var name = "download";
+  var checksum = null;
+  var previous = null;
 
-    return {
-        addData: function(slice) {
-            previous = current;
-            var parts = slice.split('$');
-            var nums = parts.shift().split('/');
+  return {
+    addData: function (slice) {
+      previous = current;
+      var parts = slice.split("$");
+      var nums = parts.shift().split("/");
 
-            current = parseInt(nums[0]);
+      current = parseInt(nums[0]);
 
-            if(nums.length === 3) {
-                total = parseInt(nums[1]);
-                var newChecksum = parseInt(nums[2]);
-                if(checksum) {
-                    if(checksum !== newChecksum) {
-                        //console.log('checksum and newChecksum dont match');
-                        //console.log(checksum, newChecksum);
-                    }
-                } else {
-                    // checksum not yet defined
-                    checksum = newChecksum;
-                }
-                return;
-            }
-
-            var content = parts.join('$');
-
-            if(nums.length === 2) {
-                var sliceChecksum = parseInt(nums[1]);
-                var contentChecksum = parseInt(utils.hashCode(content));
-                // we actually want == here, not ===
-                if(sliceChecksum == contentChecksum) { // jshint ignore:line
-                    slices[current] = content;
-                } else {
-
-                    //console.log('slice checksum not ok:', sliceChecksum, contentChecksum);
-                }
-            }
-
-        },
-
-        getPrevious: function() {
-            return previous;
-        },
-
-        getCurrent: function() {
-            return current;
-        },
-
-        done: function() {
-            var merged = this.merge();
-
-            if(utils.hashCode(merged) === checksum) {
-                return merged;
-            } else {
-                return null;
-            }
-        },
-
-        merge: function() {
-            return slices.join('');
-        },
-
-        getProgress: function() {
-            var progress = [];
-            var found = 0;
-            var totalSlices = 0;
-
-            if(total) {
-                totalSlices = total;
-                progress[0] = true;
-            } else {
-                totalSlices = slices.length;
-            }
-
-            //console.log(totalSlices);
-            for(var i = 1; i < totalSlices; i++) {
-                var slice = slices[i];
-                if(slice) {
-                    found++;
-                    progress[i] = true;
-                } else {
-                    progress[i] = false;
-                }
-            }
-
-            var percent = 0;
-            if(total) {
-                percent = found / total;
-            } else {
-                percent = found / progress.length;
-            }
-
-            return {
-                total: total,
-                found: found,
-                progress: progress,
-                percent: percent,
-                current: current
-            };
+      if (nums.length === 4) {
+        total = parseInt(nums[1]);
+        name = nums[2];
+        var newChecksum = parseInt(nums[3]);
+        if (checksum) {
+          if (checksum !== newChecksum) {
+            //console.log('checksum and newChecksum dont match');
+            //console.log(checksum, newChecksum);
+          }
+        } else {
+          // checksum not yet defined
+          checksum = newChecksum;
         }
-    };
+        return;
+      }
+
+      var content = parts.join("$");
+
+      if (nums.length === 2) {
+        var sliceChecksum = parseInt(nums[1]);
+        var contentChecksum = parseInt(utils.hashCode(content));
+        // we actually want == here, not ===
+        if (sliceChecksum == contentChecksum) {
+          // jshint ignore:line
+          slices[current] = content;
+        } else {
+          //console.log('slice checksum not ok:', sliceChecksum, contentChecksum);
+        }
+      }
+    },
+
+    getPrevious: function () {
+      return previous;
+    },
+
+    getCurrent: function () {
+      return current;
+    },
+
+    done: function () {
+      var merged = this.merge();
+
+      if (utils.hashCode(merged) === checksum) {
+        return merged;
+      } else {
+        return null;
+      }
+    },
+
+    merge: function () {
+      return slices.join("");
+    },
+    getName: function () {
+      return name;
+    },
+
+    getProgress: function () {
+      var progress = [];
+      var found = 0;
+      var totalSlices = 0;
+
+      if (total) {
+        totalSlices = total;
+        progress[0] = true;
+      } else {
+        totalSlices = slices.length;
+      }
+
+      //console.log(totalSlices);
+      for (var i = 1; i <= totalSlices+1; i++) {
+        var slice = slices[i];
+        if (slice) {
+          found++;
+          progress[i] = true;
+        } else {
+          progress[i] = false;
+        }
+      }
+
+      var percent = 0;
+      if (total) {
+        percent = found / total;
+      } else {
+        percent = found / progress.length;
+      }
+
+      return {
+        total: total,
+        found: found,
+        progress: progress,
+        percent: percent,
+        current: current,
+      };
+    },
+  };
 }
 
 /* global ds */
@@ -4782,7 +4810,9 @@ function Video(videoElement, canvas) { // jshint ignore:line
 
     if( MediaStreamTrack.getSources) {
         MediaStreamTrack.getSources(getSources);
-    } else {
+    } else if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+        navigator.mediaDevices.enumerateDevices().then(getSources);
+    }else {
         start();
     }
 
@@ -4790,11 +4820,9 @@ function Video(videoElement, canvas) { // jshint ignore:line
         //console.log(sources);
         for(var i = 0; i < sources.length; i++) {
             var source = sources[i];
-            if( source.hasOwnProperty('kind')) {
-                if( source.kind === 'video') {
-                    //console.log(source);
-                    videoSources.push(source);
-                }
+            if( source.kind === 'video'|| source.kind === 'videoinput') {
+                //console.log(source);
+                videoSources.push(source);
             }
         }
         start(videoSources[currentVideoSource]);
@@ -4806,15 +4834,21 @@ function Video(videoElement, canvas) { // jshint ignore:line
         var videoConstraints = {};
         if( source) {
             videoConstraints = {
-                optional: [{ sourceId: source.id }]
+                optional: [{ sourceId: source.id || source.deviceId }]
             };
         } else {
             videoConstraints = true;
         }
 
         if( videoStream) {
+            if(videoStream.stop){
             videoStream.stop();
             videoElement.src = null;
+            }else{
+                videoStream.getTracks().forEach(function(stream) {
+                    stream.stop();
+                });
+            }
         }
 
         //console.log(source.id);
@@ -5022,7 +5056,7 @@ function scanResultCallback(result) {
     if( merged ) {
         console.log('done:', merged);
         ds.finished = true;
-        ds.receiveDone(merged);
+        ds.receiveDone(merged,merger.getName());
     }
     ds.reportProgress();
 }
@@ -5049,14 +5083,17 @@ ds.duplexSend = function() {
     ds.duplexLoopTimeout = setTimeout(ds.duplexSend, ds.sendingInterval);
 };
 
-ds.iface.send = function(data) {
+ds.iface.send = function(data,name) {
     if( ! ds.output ) {
         console.error('Tried to send data without supplying output element');
         return;
     }
+    clearTimeout(ds.sendLoopTimeout);
     ds.sending = true;
     //console.log(data);
-    slicer.setData(data);
+    slicer.setData(data,name);
+    ds.fireEvent('sliceCountChange', [slicer.getSlices().length]);
+
     if( ds.videoElement ) {
         // sender has video specified so it's a duplex sender
 
@@ -5082,11 +5119,12 @@ ds.receiveLoop = function() {
 ds.iface.onmessage = function() {};
 ds.iface.onprogress = function() {};
 
-ds.receiveDone = function(message) {
+ds.receiveDone = function(message,name) {
     var e = {};
     e.data = message;
     ds.endTime = performance.now();
     e.time = ds.endTime - ds.startTime;
+    e.name=name;
 
     ds.iface.onmessage(e);
     ds.fireEvent('message', [e]);
@@ -5126,7 +5164,19 @@ ds.iface.nextVideoSource = function() {
         console.warn('tried to change video source but there was no video');
     }
 };
-
+ds.iface.stop= function() {
+    clearTimeout(ds.sendLoopTimeout);
+}
+ds.iface.setSlice= function(value) {
+    ds.sliceSize=+value||250
+}
+ds.iface.setInterval= function(value) {
+    ds.baseInterval=+value||30
+    ds.sendingInterval=ds.baseInterval * 4;
+}
+ds.iface.setQueue= function(value) {
+    slicer.setQueue(value);
+}
 // event functions based on http://stackoverflow.com/a/10979055/2324209
 ds.events = {};
 ds.iface.addEventListener = function(name, handler) {
