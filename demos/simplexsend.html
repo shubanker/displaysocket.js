@@ -21,9 +21,12 @@
   <body>
     <button onclick="displaySocket.nextVideoSource();">Next camera</button>
     <input id="file-input" type="file" />
-    <input type="text" placeholder="sliceSize" id="sliceSize" value="250" />
-    <input type="text" placeholder="interval" id="interval" value="30" />
-    <span>Number of slices <span id="sliceCount">0</span></span>
+    <div id="toolbars" style="display: none">
+      <input type="text" placeholder="sliceSize" id="sliceSize" value="250" />
+      <input type="text" placeholder="interval" id="interval" value="30" />
+      <span>Number of slices <span id="sliceCount">0</span></span>
+      <select id="batch"></select>
+    </div>
     <script src="../dist/displaysocket.js"></script>
     <div style="margin: 15px; background: black" id="writer-output"></div>
     <div id="queueList">
@@ -52,8 +55,20 @@
       var displaySocket = new DisplaySocket({
         output: outputElement,
       });
+      var batch = document.getElementById("batch");
       displaySocket.addEventListener("sliceCountChange", function (slice) {
         document.getElementById("sliceCount").innerText = slice;
+        slice *= 1;
+        var batchCount = slice / 100; //Batch size of 100 each.
+        batch.innerHTML = "<option value=0>All</option>";
+        for (let i = 0; i < batchCount; i++) {
+          var option = document.createElement("option");
+          var label = `${i * 100 + 1}-${Math.min((i + 1) * 100, slice)}`;
+          option.appendChild(document.createTextNode(label));
+          option.setAttribute("value", label);
+          batch.appendChild(option);
+        }
+        document.getElementById("toolbars").style.display = "inline";
       });
 
       /*
@@ -90,6 +105,20 @@
         .addEventListener("change", function (e) {
           displaySocket.setQueue(e.target.value);
         });
+      batch.addEventListener("change", function (e) {
+        // displaySocket.setBatch(e.target.value);
+        console.log(e.target.value);
+        let op = "";
+        if (e.target.value != 0) {
+          var [start, end] = e.target.value.split("-");
+          start--;
+          end--;
+          for (let i = start; i < end; i++) {
+            op += i + ",";
+          }
+        }
+        displaySocket.setQueue(op);
+      });
     </script>
   </body>
 </html>
