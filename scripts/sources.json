@@ -22,6 +22,7 @@
   "src/libs/readers/jsqrcode/src/databr.js",
   "src/defaults.js",
   "src/binary.js",
+  "src/checkpoint.js",
   "src/slicer.js",
   "src/writer.js",
   "src/reader.js",

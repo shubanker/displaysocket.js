@@ -96,8 +96,34 @@ Additional events:
 `setQueue('0,2,7')` resends original **zero-based** frame indices; an empty or invalid
 binary queue restores all frames. `stop()` stops playback and cancels pending file
 preparation; a cancelled `sendFile()` resolves to `null` without starting playback.
-This mode supports one active incoming file at a time; it does not persist chunks
-across reloads. Files are buffered in memory. The default receive limit is 64 MiB;
+This mode supports one active incoming file at a time. Files are buffered in memory.
+The simplex receive demo additionally saves verified incoming frames to IndexedDB
+and restores its progress and missing list on reload. Keep the same sender session
+running: restarting/reselecting a file generates a new transfer ID and starts a
+new receive transfer. Use **Discard saved progress** to remove a checkpoint.
+Completed, verified transfers automatically remove temporary stored chunks.
+Storage is local to the same browser profile and origin (scheme, hostname, port);
+private mode, quota limits, browser eviction or cleared site data can prevent resume.
+Chunks are not encrypted at rest. Do not rely on browser storage as a backup.
+If storage fails, live reception continues in memory with a warning. A few frames
+whose database writes have not committed at reload may need to be scanned again.
+
+Library persistence is opt-in via `persistReceive: true` or a custom database name
+string. `receiveReady` is a Promise for checkpoint restoration; `checkpoint` events
+report `ready`, `saved`, `restored`, `cleared`, `complete` or `unavailable`.
+`clearReceiveCheckpoint()` discards in-progress stored and in-memory binary chunks.
+Use only one active receive tab per checkpoint database. Legacy text transfers
+are not checkpointed.
+
+Changing **Bytes per slice** currently starts a new transfer, even for the same
+file. DSB1 identifies chunks by index and count, not byte offsets: index 1 at 250
+bytes does not describe the same data as index 1 at 200 bytes. Preserving progress
+across live size changes needs a new, versioned protocol with stable transfer
+identity, byte-offset/length addressing, overlap handling, byte-coverage progress,
+and byte-range resend feedback. This is feasible, but not a safe DSB1 setting
+change. Keep slice size unchanged when resuming a checkpoint.
+
+The default receive limit is 64 MiB;
 override it with `maxReceiveBytes` in the receiver constructor when appropriate.
 Decompressed size is also bounded. Use a sensible limit for the receiving device.
 

@@ -293,6 +293,58 @@
             element.remove();
         });
         await load('demos/pending.js');
+        await test('IndexedDB checkpoints restore partial frames and isolate transfer IDs', async function () {
+            var name = 'displaysocket-test-checkpoint-' + crypto.randomUUID();
+            var store = new ReceiveCheckpoint(name);
+            try {
+                var prepared = await BinaryTransfer.prepare(file, 250);
+                var frames = prepared.sender.getSlices();
+                await store.save(frames[0]);
+                await store.save(frames[2]);
+                var reopened = new ReceiveCheckpoint(name);
+                var saved = await reopened.load();
+                assert(saved.length === 2);
+                var receiver = new BinaryTransfer.Receiver(1024 * 1024);
+                saved.forEach(function (frame) { receiver.add(frame); });
+                frames.forEach(function (frame) { receiver.add(frame); });
+                equalBytes(new Uint8Array(await (await receiver.finish()).data.arrayBuffer()), allBytes);
+                var different = await BinaryTransfer.prepare(new File(['other'], 'other.bin'), 250);
+                await reopened.save(different.sender.getSlices()[0]);
+                var isolated = await reopened.load();
+                assert(isolated.length === 1);
+                equalBytes(isolated[0], different.sender.getSlices()[0]);
+                await reopened.clear();
+                assert((await reopened.load()).length === 0);
+            } finally { await store.clear(); }
+        });
+        await test('Public receiver restores progress and verifies completed checkpoints', async function () {
+            var name = 'displaysocket-test-public-' + crypto.randomUUID();
+            var store = new ReceiveCheckpoint(name);
+            var element = output();
+            try {
+                var prepared = await BinaryTransfer.prepare(file, 250);
+                var frames = prepared.sender.getSlices();
+                await store.save(frames[0]);
+                var restored;
+                var receiver = new DisplaySocket({ output: element, wait: true, persistReceive: name });
+                receiver.addEventListener('progress', function (event) { restored = event; });
+                await receiver.receiveReady;
+                assert(restored.found === 1 && restored.total === frames.length);
+                await receiver.clearReceiveCheckpoint();
+                assert((await store.load()).length === 0);
+                for (var frame of frames) await store.save(frame);
+                var completeReceiver = new DisplaySocket({ output: element, wait: true, persistReceive: name });
+                var complete = new Promise(function (resolve, reject) {
+                    completeReceiver.addEventListener('message', resolve);
+                    completeReceiver.addEventListener('error', reject);
+                });
+                await completeReceiver.receiveReady;
+                var message = await complete;
+                assert(message.binary && message.name === file.name);
+                equalBytes(new Uint8Array(await message.data.arrayBuffer()), allBytes);
+                assert((await store.load()).length === 0, 'Completed checkpoint must be removed');
+            } finally { await store.clear(); element.remove(); }
+        });
         await test('Pending QR compact ranges, plain lists, zero index, and 100-entry cap', async function () {
             assert(PendingFeedback.encode([4, 6, 7, 8]) === 'pending:4,6-8');
             assert(PendingFeedback.decode('pending:0,4,6,7,8', 10).join(',') === '0,4,6,7,8');

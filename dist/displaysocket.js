@@ -15055,6 +15055,66 @@ var BinaryTransfer = (function () {
 
     return { isFrame: isFrame, prepare: prepare, Receiver: Receiver };
 })();
+/* Optional IndexedDB checkpoint: one active receive transfer per database name. */
+function ReceiveCheckpoint(name) {
+    'use strict';
+    var database;
+    var activeId = null;
+    var queue = Promise.resolve();
+    function open() {
+        if (!database) {
+            database = new Promise(function (resolve, reject) {
+                if (!globalThis.indexedDB) { reject(new Error('IndexedDB is unavailable.')); return; }
+                var request = indexedDB.open(name, 1);
+                request.onupgradeneeded = function () { request.result.createObjectStore('frames'); };
+                request.onsuccess = function () {
+                    request.result.onversionchange = function () { request.result.close(); };
+                    resolve(request.result);
+                };
+                request.onerror = function () { reject(request.error); };
+                request.onblocked = function () { reject(new Error('Receive storage is blocked by another tab.')); };
+            });
+        }
+        return database;
+    }
+    function transaction(action) {
+        var result = queue.then(async function () {
+            var db = await open();
+            return new Promise(function (resolve, reject) {
+                var tx = db.transaction('frames', 'readwrite');
+                var value;
+                tx.oncomplete = function () { resolve(value); };
+                tx.onabort = function () { reject(tx.error || new Error('Checkpoint transaction aborted.')); };
+                tx.onerror = function () { /* onabort reports the error */ };
+                action(tx.objectStore('frames'), function (data) { value = data; });
+            });
+        });
+        queue = result.catch(function () {});
+        return result;
+    }
+    this.load = function () {
+        return transaction(function (store, result) {
+            var request = store.getAll();
+            request.onsuccess = function () {
+                var frames = request.result;
+                if (frames.length) activeId = Array.from(frames[0].subarray(4, 12)).join(',');
+                result(frames);
+            };
+        });
+    };
+    this.save = function (frame) {
+        var copy = frame.slice();
+        return transaction(function (store) {
+            var id = Array.from(copy.subarray(4, 12)).join(',');
+            if (id !== activeId) { store.clear(); activeId = id; }
+            var index = new DataView(copy.buffer).getUint32(12);
+            store.put(copy, index);
+        });
+    };
+    this.clear = function () {
+        return transaction(function (store) { store.clear(); activeId = null; });
+    };
+}
 /* global ds */
 /* global utils */
 
@@ -15489,6 +15549,7 @@ function Video(videoElement, canvas) { // jshint ignore:line
 /* global Reader */
 /* global Merger */
 /* global BinaryTransfer */
+/* global ReceiveCheckpoint */
 
 var utils = {}; // TODO move to own file
 // http://stackoverflow.com/a/7616484/2324209
@@ -15554,6 +15615,44 @@ if (!Number.isSafeInteger(maxReceiveBytes) || maxReceiveBytes < 0) {
 var binaryReceiver = new BinaryTransfer.Receiver(maxReceiveBytes);
 var binaryFinishing = false;
 var sendRequest = 0;
+var checkpoint = ctor.persistReceive ? new ReceiveCheckpoint(
+    typeof ctor.persistReceive === 'string' ? ctor.persistReceive : 'displaysocket-receive-v1'
+) : null;
+var restoringCheckpoint = !!checkpoint;
+
+function checkpointStatus(status) {
+    ds.fireEvent('checkpoint', [status]);
+}
+
+function checkpointError(error) {
+    checkpoint = null;
+    checkpointStatus({ state: 'unavailable', message: 'Progress cannot be saved: ' + error.message });
+}
+
+function acceptBinaryProgress(received) {
+    writer.write(received.index.toString());
+    ds.iface.onprogress(received.progress);
+    ds.fireEvent('progress', [received.progress]);
+    if (received.complete) {
+        binaryFinishing = true;
+        binaryReceiver.finish().then(async function (message) {
+            ds.finished = true;
+            clearTimeout(ds.receiveLoopTimeout);
+            if (checkpoint) {
+                try { await checkpoint.clear(); checkpointStatus({ state: 'complete' }); }
+                catch (error) { checkpointError(error); }
+            }
+            message.time = performance.now() - ds.startTime;
+            ds.iface.onmessage(message);
+            ds.fireEvent('message', [message]);
+        }).catch(function (error) {
+            binaryFinishing = false;
+            binaryReceiver = new BinaryTransfer.Receiver(maxReceiveBytes);
+            if (checkpoint) checkpoint.clear().catch(checkpointError);
+            reportError(error);
+        });
+    }
+}
 
 // TODO proper feature detection and handling
 var performance;
@@ -15583,6 +15682,7 @@ function reportError(error) {
 }
 
 function scanResultCallback(result, rawBytes) {
+    if (restoringCheckpoint) { return; }
     if( ! ds.startTime ) {
         ds.startTime = performance.now();
     }
@@ -15605,23 +15705,12 @@ function scanResultCallback(result, rawBytes) {
         try {
             var received = binaryReceiver.add(rawBytes);
             if (!received) { return; }
-            writer.write(received.index.toString());
-            ds.iface.onprogress(received.progress);
-            ds.fireEvent('progress', [received.progress]);
-            if (received.complete) {
-                binaryFinishing = true;
-                binaryReceiver.finish().then(function (message) {
-                    ds.finished = true;
-                    clearTimeout(ds.receiveLoopTimeout);
-                    message.time = performance.now() - ds.startTime;
-                    ds.iface.onmessage(message);
-                    ds.fireEvent('message', [message]);
-                }).catch(function (error) {
-                    binaryFinishing = false;
-                    binaryReceiver = new BinaryTransfer.Receiver(maxReceiveBytes);
-                    reportError(error);
-                });
+            if (checkpoint) {
+                checkpoint.save(rawBytes).then(function () {
+                    checkpointStatus({ state: 'saved', found: received.progress.found, total: received.progress.total });
+                }).catch(checkpointError);
             }
+            acceptBinaryProgress(received);
         } catch (error) {
             reportError(error);
         }
@@ -15779,6 +15868,17 @@ ds.iface.setQueue= function(value) {
     slicer.setQueue(value);
     if (ds.duplexSending) { writeNextSlice(); }
 }
+ds.iface.clearReceiveCheckpoint = async function () {
+    if (binaryFinishing || ds.finished) throw new Error('Reload to start receiving another file.');
+    if (restoringCheckpoint) throw new Error('Please wait for saved progress to load.');
+    restoringCheckpoint = true;
+    try {
+        if (checkpoint) await checkpoint.clear();
+        binaryReceiver = new BinaryTransfer.Receiver(maxReceiveBytes);
+        ds.startTime = null;
+        checkpointStatus({ state: 'cleared' });
+    } finally { restoringCheckpoint = false; }
+};
 // event functions based on http://stackoverflow.com/a/10979055/2324209
 ds.events = {};
 ds.iface.addEventListener = function(name, handler) {
@@ -15811,6 +15911,27 @@ ds.fireEvent = function(name, args) {
         ev[i].apply(null, args);
     }
 };
+
+if (checkpoint) {
+    ds.iface.receiveReady = checkpoint.load().then(function (frames) {
+        var latest = null;
+        try {
+            frames.forEach(function (frame) {
+                var received = binaryReceiver.add(frame);
+                if (!received) throw new Error('Invalid saved receive frame.');
+                latest = received;
+            });
+        } catch (error) {
+            binaryReceiver = new BinaryTransfer.Receiver(maxReceiveBytes);
+            return checkpoint.clear().then(function () { throw error; });
+        }
+        if (latest) {
+            ds.startTime = performance.now();
+            checkpointStatus({ state: 'restored', found: latest.progress.found, total: latest.progress.total });
+            acceptBinaryProgress(latest);
+        } else checkpointStatus({ state: 'ready' });
+    }).catch(checkpointError).finally(function () { restoringCheckpoint = false; });
+} else ds.iface.receiveReady = Promise.resolve();
 
 if( ! ds.wait && ds.videoElement ) {
     ds.receive();

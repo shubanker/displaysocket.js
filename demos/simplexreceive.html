@@ -40,6 +40,8 @@
             <p class="progress-value" id="progress-percent">0.00%</p>
             <progress id="transfer-progress" value="0" max="1" aria-label="File received"></progress>
             <div id="progress" class="hint" role="status">Waiting for the first QR code…</div>
+            <p class="hint" id="checkpoint-status" role="status">Loading saved receive progress…</p>
+            <button type="button" id="discard-checkpoint">Discard saved progress</button>
             <a href="" id="ready-button" class="button button-primary" hidden>Download received file</a>
           </section>
           <section class="card" aria-labelledby="pending-heading">
@@ -92,6 +94,23 @@
 
       var displaySocket = new DisplaySocket({
         video: videoElement,
+        persistReceive: 'displaysocket-simplex-receive-v1',
+      });
+      displaySocket.addEventListener("checkpoint", function (status) {
+        var messages = {
+          ready: "Receive progress is saved on this browser. You can reload and resume.",
+          saved: "Saved " + status.found + "/" + status.total + " slices on this browser.",
+          restored: "Restored " + status.found + "/" + status.total + " slices. Keep the same sender session running to resume.",
+          complete: "Transfer verified. Temporary saved chunks removed.",
+          cleared: "Saved progress discarded. Waiting for QR codes…",
+        };
+        document.getElementById("checkpoint-status").textContent = status.message || messages[status.state];
+        if (status.state === "cleared") progressFunction({ binary: true, progress: [], percent: 0, found: 0, total: 0, current: 0 });
+      });
+      document.getElementById("discard-checkpoint").addEventListener("click", async function () {
+        if (!window.confirm("Discard received slices saved on this browser?")) return;
+        try { await displaySocket.clearReceiveCheckpoint(); }
+        catch (error) { document.getElementById("checkpoint-status").textContent = error.message; }
       });
 
       var downloadUrl = null;
