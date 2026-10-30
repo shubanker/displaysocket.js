@@ -6,27 +6,26 @@ var PendingFeedback = (function () {
 
   function format(indices, limit) {
     var values = Array.from(new Set(indices)).sort(function (a, b) { return a - b; });
-    var remaining = limit === undefined ? Infinity : limit;
+    var maxEntries = limit === undefined ? Infinity : limit;
     var parts = [];
-    for (var i = 0; i < values.length && remaining > 0; i++) {
+    for (var i = 0; i < values.length && parts.length < maxEntries; i++) {
       var start = values[i];
       var end = start;
       var missing = 1;
       while (i + 1 < values.length) {
         var span = values[i + 1] - start + 1;
         var captured = span - (missing + 1);
-        if (span > remaining || captured > span * CAPTURED_THRESHOLD) break;
+        if (captured > span * CAPTURED_THRESHOLD) break;
         end = values[++i];
         missing++;
       }
-      remaining -= end - start + 1;
       parts.push(end === start ? String(start) : start + "-" + end);
     }
     return parts.join(",");
   }
 
   function encode(indices) {
-    // The limit counts expanded indices, including captured slices inside ranges.
+    // Each comma-separated number or range counts as one entry.
     return "pending:" + format(indices, LIMIT);
   }
 
@@ -48,12 +47,14 @@ var PendingFeedback = (function () {
   }
 
   function decode(text, total) {
-    if (typeof text !== "string" || text.length > 1500 || !text.startsWith("pending:")) {
+    if (typeof text !== "string" || text.length > 2500 || !text.startsWith("pending:")) {
       throw new Error("Scan a pending-slices QR from the receiving device.");
     }
     var content = text.slice(8);
     if (!content) throw new Error("This QR contains no missing slices.");
-    var values = parse(content, total, LIMIT);
+    if (content.split(",").length > LIMIT) throw new Error("Pending QR contains more than 100 comma-separated entries.");
+    // Expansion is still bounded by the selected file's total frame count.
+    var values = parse(content, total, total);
     if (!values.length) throw new Error("This QR contains no missing slices.");
     return values;
   }

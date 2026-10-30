@@ -49,7 +49,7 @@
             <p class="hint" id="copy-status" role="status"></p>
             <div id="pending-qr-section" hidden>
               <h3>Scan pending slices</h3>
-              <div class="pending-qr" id="pending-qr" role="img" aria-label="QR code containing up to 100 missing slice numbers"></div>
+              <div class="pending-qr" id="pending-qr" role="img" aria-label="QR code containing up to 100 comma-separated numbers or ranges"></div>
               <p class="hint" id="pending-qr-status"></p>
               <p class="hint">On the sender, choose Scan pending. Ranges may include up to 20% already-received slices to keep the list compact. Scan again after these slices arrive for the next group.</p>
             </div>
@@ -75,12 +75,13 @@
         pendingQRTimer = null;
         document.getElementById("pending-qr-section").hidden = !pendingNumbers.length;
         if (!pendingNumbers.length) { pendingQRValue = ""; return; }
-        var value = PendingFeedback.encode(pendingNumbers.slice(0, 100));
-        var requested = PendingFeedback.decode(value, Math.max.apply(null, pendingNumbers.slice(0, 100)) + 1);
-        var missingSet = new Set(pendingNumbers.slice(0, 100));
+        var value = PendingFeedback.encode(pendingNumbers);
+        var requested = PendingFeedback.decode(value, pendingNumbers[pendingNumbers.length - 1] + 1);
+        var missingSet = new Set(pendingNumbers);
         var missingCount = requested.filter(function (index) { return missingSet.has(index); }).length;
         document.getElementById("pending-qr-status").textContent =
-          "Requests " + requested.length + " slices, including " + missingCount + " of " + pendingNumbers.length + " missing slices (zero-based).";
+          "Contains " + value.slice(8).split(",").length + " entries (up to 100). Requests " + requested.length +
+          " slices, including " + missingCount + " of " + pendingNumbers.length + " missing slices (zero-based).";
         if (value === pendingQRValue) return;
         if (!pendingQRCode) pendingQRCode = new QRCode(document.getElementById("pending-qr"), {
           width: 320, height: 320, correctLevel: QRCode.CorrectLevel.L,

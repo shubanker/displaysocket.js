@@ -69,20 +69,21 @@ The entire sequence repeats, so missing metadata or data frames can be received
 on later passes. Binary frames are incompatible with old receivers.
 
 The simplex demos also support camera-based missing-slice feedback. The receiver
-shows a QR below **Missing slices**, containing at most the first 100 missing
-zero-based indices. On the sender, select **Scan pending**, allow camera access,
+shows a QR below **Missing slices**, containing at most 100 comma-separated
+entries (each number or range counts as one). On the sender, select **Scan pending**, allow camera access,
 and scan that QR to update the resend queue automatically. The camera stops after
 a successful scan or cancellation. Consecutive indices use compact ranges, e.g.
 `pending:4,6-8`; plain `pending:4,6,7,8` is accepted too. No gzip or Base64 is
-needed for this short feedback message. If more than 100 slices are missing,
+needed for this short feedback message. If more than 100 entries are needed,
 receive the current group, then scan the updated QR again. Make sure both devices
 are working on the same file: the short feedback message does not carry a file ID.
 The visible/copied list also uses ranges, and the sender accepts pasted ranges.
 Ranges can bridge already-received slices when those represent at most 20% of
 the range's inclusive length. For example, `1,2,3,6,7,8,10` displays as
 `1-3,6-10`, not `1-10` (that would contain 30% already-received slices).
-The QR's 100-slice cap counts all expanded indices, including these harmless
-resends; the missing count still reports only genuinely missing slices.
+The QR's cap counts entries, not expanded indices: `1-100,200-299` is two
+entries requesting 200 slices. Expansion is bounded by the selected file's total
+frame count; the missing count still reports only genuinely missing slices.
 
 Additional events:
 

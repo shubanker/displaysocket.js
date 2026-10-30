@@ -293,13 +293,25 @@
             element.remove();
         });
         await load('demos/pending.js');
-        await test('Pending QR compact ranges, plain lists, zero index, and 100-number cap', async function () {
+        await test('Pending QR compact ranges, plain lists, zero index, and 100-entry cap', async function () {
             assert(PendingFeedback.encode([4, 6, 7, 8]) === 'pending:4,6-8');
             assert(PendingFeedback.decode('pending:0,4,6,7,8', 10).join(',') === '0,4,6,7,8');
             assert(PendingFeedback.decode('pending:4,6-8', 10).join(',') === '4,6,7,8');
             var large = Array.from({ length: 150 }, function (_, i) { return i * 2; });
             var capped = PendingFeedback.decode(PendingFeedback.encode(large), 300);
             assert(capped.length === 100 && capped[99] === 198);
+            assert(PendingFeedback.decode('pending:1-100,200-299', 300).length === 200, 'Two ranges count as two entries');
+            var consecutive = Array.from({ length: 1000 }, function (_, i) { return i; });
+            assert(PendingFeedback.encode(consecutive) === 'pending:0-999', 'A long range must not be truncated');
+            assert(PendingFeedback.decode(PendingFeedback.encode(consecutive), 1000).length === 1000);
+            var manyRanges = [];
+            for (var group = 0; group < 101; group++) {
+                for (var offset = 0; offset < 10; offset++) manyRanges.push(group * 100 + offset);
+            }
+            var rangePayload = PendingFeedback.encode(manyRanges);
+            assert(rangePayload.slice(8).split(',').length === 100);
+            assert(PendingFeedback.decode(rangePayload, 10100).length === 1000);
+            await rejects(function () { PendingFeedback.decode('pending:' + large.slice(0, 101).join(','), 300); }, /100 comma-separated/);
             var empty = PendingFeedback.encode([]);
             await rejects(function () { PendingFeedback.decode(empty, 10); }, /no missing/);
             for (var invalid of ['other:4', 'pending:0-100', 'pending:9-2', 'pending:-1', 'pending:4,', 'pending:10']) {
@@ -315,7 +327,7 @@
             assert(PendingFeedback.parse('', 20).length === 0);
             var missing = Array.from({ length: 150 }, function (_, i) { return i; }).filter(function (i) { return i % 5 !== 3; });
             var requested = PendingFeedback.decode(PendingFeedback.encode(missing), 150);
-            assert(requested.length <= 100, 'QR limit must include captured slices in ranges');
+            assert(requested.length > 100, 'Ranges can request more than 100 expanded slices');
             assert(requested.some(function (i) { return i % 5 === 3; }), 'Small gaps should be included');
             for (var invalid of ['1-30', '7-2', '1,,3']) {
                 await rejects(function () { PendingFeedback.parse(invalid, 20); }, /pending|indices/);
