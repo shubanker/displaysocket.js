@@ -77,6 +77,12 @@ a successful scan or cancellation. Consecutive indices use compact ranges, e.g.
 needed for this short feedback message. If more than 100 slices are missing,
 receive the current group, then scan the updated QR again. Make sure both devices
 are working on the same file: the short feedback message does not carry a file ID.
+The visible/copied list also uses ranges, and the sender accepts pasted ranges.
+Ranges can bridge already-received slices when those represent at most 20% of
+the range's inclusive length. For example, `1,2,3,6,7,8,10` displays as
+`1-3,6-10`, not `1-10` (that would contain 30% already-received slices).
+The QR's 100-slice cap counts all expanded indices, including these harmless
+resends; the missing count still reports only genuinely missing slices.
 
 Additional events:
 

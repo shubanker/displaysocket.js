@@ -46,7 +46,7 @@
           </section>
           <section class="card" id="queueList" aria-labelledby="queue-heading">
             <div class="card-heading"><h2 id="queue-heading">Resend missing slices</h2><span class="badge">Optional</span></div>
-            <label class="field" for="pending">Pending slice numbers<textarea id="pending" rows="4" placeholder="e.g. 0, 4, 12, 23" aria-describedby="queue-hint"></textarea></label>
+            <label class="field" for="pending">Pending slice numbers<textarea id="pending" rows="4" placeholder="e.g. 0, 4-12, 23" aria-describedby="queue-hint"></textarea></label>
             <p class="hint" id="queue-hint">Paste the pending list from the receiving device. Leave empty to send all slices.</p>
             <button type="button" id="scan-pending" aria-expanded="false" aria-controls="pending-scanner">Scan pending</button>
             <div id="pending-scanner" hidden>
@@ -83,7 +83,7 @@
       var pendingScanner = new PendingFeedback.Scanner(document.getElementById("pending-video"), function (text) {
         try {
           var indices = PendingFeedback.decode(text, totalSlices);
-          document.getElementById("pending").value = indices.join(",");
+          document.getElementById("pending").value = PendingFeedback.format(indices);
           displaySocket.setQueue(indices.join(","));
           batch.value = "0";
           stopPendingScan();
@@ -174,7 +174,14 @@
       document
         .getElementById("pending")
         .addEventListener("change", function (e) {
-          displaySocket.setQueue(e.target.value);
+          try {
+            var indices = PendingFeedback.parse(e.target.value, totalSlices);
+            displaySocket.setQueue(indices.join(","));
+            batch.value = "0";
+            scanStatus.textContent = indices.length ? "Resending " + indices.length + " slices." : "Sending all slices.";
+          } catch (error) {
+            scanStatus.textContent = error.message;
+          }
         });
       batch.addEventListener("change", function (e) {
         // displaySocket.setBatch(e.target.value);

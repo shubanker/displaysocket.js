@@ -2,39 +2,60 @@
 var PendingFeedback = (function () {
   "use strict";
   var LIMIT = 100;
+  var CAPTURED_THRESHOLD = 0.2;
 
-  function encode(indices) {
-    var values = Array.from(new Set(indices)).sort(function (a, b) { return a - b; }).slice(0, LIMIT);
+  function format(indices, limit) {
+    var values = Array.from(new Set(indices)).sort(function (a, b) { return a - b; });
+    var remaining = limit === undefined ? Infinity : limit;
     var parts = [];
-    for (var i = 0; i < values.length; i++) {
+    for (var i = 0; i < values.length && remaining > 0; i++) {
       var start = values[i];
       var end = start;
-      while (i + 1 < values.length && values[i + 1] === end + 1) end = values[++i];
-      parts.push(end - start >= 2 ? start + "-" + end :
-        (end === start ? String(start) : start + "," + end));
+      var missing = 1;
+      while (i + 1 < values.length) {
+        var span = values[i + 1] - start + 1;
+        var captured = span - (missing + 1);
+        if (span > remaining || captured > span * CAPTURED_THRESHOLD) break;
+        end = values[++i];
+        missing++;
+      }
+      remaining -= end - start + 1;
+      parts.push(end === start ? String(start) : start + "-" + end);
     }
-    return "pending:" + parts.join(",");
+    return parts.join(",");
+  }
+
+  function encode(indices) {
+    // The limit counts expanded indices, including captured slices inside ranges.
+    return "pending:" + format(indices, LIMIT);
+  }
+
+  function parse(content, total, limit) {
+    if (!Number.isSafeInteger(total) || total < 1) throw new Error("Select a file before entering pending slices.");
+    if (!content.trim()) return [];
+    var values = [];
+    content.split(",").forEach(function (part) {
+      var match = /^(\d{1,10})(?:\s*-\s*(\d{1,10}))?$/.exec(part.trim());
+      if (!match) throw new Error("Invalid pending list. Use numbers or ranges such as 1-4,7,10-12.");
+      var start = Number(match[1]);
+      var end = match[2] === undefined ? start : Number(match[2]);
+      if (end < start || end >= total || end - start + 1 > limit - values.length) {
+        throw new Error("Pending list has invalid indices or too many slices. Check that both devices use the same file.");
+      }
+      for (var i = start; i <= end; i++) values.push(i);
+    });
+    return Array.from(new Set(values));
   }
 
   function decode(text, total) {
     if (typeof text !== "string" || text.length > 1500 || !text.startsWith("pending:")) {
       throw new Error("Scan a pending-slices QR from the receiving device.");
     }
-    if (!Number.isSafeInteger(total) || total < 1) throw new Error("Select a file before scanning pending slices.");
     var content = text.slice(8);
     if (!content) throw new Error("This QR contains no missing slices.");
-    var values = [];
-    content.split(",").forEach(function (part) {
-      var match = /^(\d{1,10})(?:-(\d{1,10}))?$/.exec(part);
-      if (!match) throw new Error("Invalid pending-slices QR.");
-      var start = Number(match[1]);
-      var end = match[2] === undefined ? start : Number(match[2]);
-      if (end < start || end >= total || end - start + 1 > LIMIT - values.length) {
-        throw new Error("Pending QR has invalid indices or more than 100 slices. Check that both devices use the same file.");
-      }
-      for (var i = start; i <= end; i++) values.push(i);
-    });
-    return Array.from(new Set(values));
+    var values = parse(content, total, LIMIT);
+    if (!values.length) throw new Error("This QR contains no missing slices.");
+    return values;
   }
 
   function Scanner(video, onResult, onStatus) {
@@ -95,5 +116,7 @@ var PendingFeedback = (function () {
     };
   }
 
-  return { encode: encode, decode: decode, Scanner: Scanner, limit: LIMIT };
+  return { encode: encode, decode: decode, format: format,
+    parse: function (text, total) { return parse(text, total, total); },
+    Scanner: Scanner, limit: LIMIT };
 })();

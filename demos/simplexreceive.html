@@ -51,7 +51,7 @@
               <h3>Scan pending slices</h3>
               <div class="pending-qr" id="pending-qr" role="img" aria-label="QR code containing up to 100 missing slice numbers"></div>
               <p class="hint" id="pending-qr-status"></p>
-              <p class="hint">On the sender, choose Scan pending. Consecutive numbers are compacted into ranges. Scan again after these slices arrive for the next group.</p>
+              <p class="hint">On the sender, choose Scan pending. Ranges may include up to 20% already-received slices to keep the list compact. Scan again after these slices arrive for the next group.</p>
             </div>
           </section>
         </div>
@@ -76,8 +76,11 @@
         document.getElementById("pending-qr-section").hidden = !pendingNumbers.length;
         if (!pendingNumbers.length) { pendingQRValue = ""; return; }
         var value = PendingFeedback.encode(pendingNumbers.slice(0, 100));
+        var requested = PendingFeedback.decode(value, Math.max.apply(null, pendingNumbers.slice(0, 100)) + 1);
+        var missingSet = new Set(pendingNumbers.slice(0, 100));
+        var missingCount = requested.filter(function (index) { return missingSet.has(index); }).length;
         document.getElementById("pending-qr-status").textContent =
-          "Contains " + Math.min(100, pendingNumbers.length) + " of " + pendingNumbers.length + " missing slices (zero-based).";
+          "Requests " + requested.length + " slices, including " + missingCount + " of " + pendingNumbers.length + " missing slices (zero-based).";
         if (value === pendingQRValue) return;
         if (!pendingQRCode) pendingQRCode = new QRCode(document.getElementById("pending-qr"), {
           width: 320, height: 320, correctLevel: QRCode.CorrectLevel.L,
@@ -120,7 +123,7 @@
         for (var i = 0; i < progress.length; i++) {
           if (!progress[i]) pendingNumbers.push(i);
         }
-        pendingItems.textContent = pendingNumbers.join(",");
+        pendingItems.textContent = PendingFeedback.format(pendingNumbers);
         // Keep a QR stable for a moment so the sending camera can acquire it.
         if (!pendingNumbers.length) {
           clearTimeout(pendingQRTimer);

@@ -306,6 +306,21 @@
                 await rejects(function () { PendingFeedback.decode(invalid, 10); }, /pending|indices/);
             }
         });
+        await test('Pending range display bridges at most 20% captured slices', async function () {
+            assert(PendingFeedback.format([1, 2, 3, 4]) === '1-4');
+            assert(PendingFeedback.format([1, 2, 3, 5]) === '1-5', 'Exactly 20% should merge');
+            assert(PendingFeedback.format([1, 2, 4]) === '1-2,4', '25% must not merge');
+            assert(PendingFeedback.format([1, 2, 3, 6, 7, 8, 10]) === '1-3,6-10');
+            assert(PendingFeedback.parse('1-4, 6, 8 - 10', 20).join(',') === '1,2,3,4,6,8,9,10');
+            assert(PendingFeedback.parse('', 20).length === 0);
+            var missing = Array.from({ length: 150 }, function (_, i) { return i; }).filter(function (i) { return i % 5 !== 3; });
+            var requested = PendingFeedback.decode(PendingFeedback.encode(missing), 150);
+            assert(requested.length <= 100, 'QR limit must include captured slices in ranges');
+            assert(requested.some(function (i) { return i % 5 === 3; }), 'Small gaps should be included');
+            for (var invalid of ['1-30', '7-2', '1,,3']) {
+                await rejects(function () { PendingFeedback.parse(invalid, 20); }, /pending|indices/);
+            }
+        });
     } catch (error) {
         failures++;
         lines.push('SETUP FAILURE: ' + error.message);
