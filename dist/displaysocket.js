@@ -14821,7 +14821,7 @@ if(ctor.videoMirrorCanvas) {
     ds.videoMirrorCanvas = ctor.videoMirrorCanvas;
 } else {
     ds.videoMirrorCanvas = document.createElement('canvas');
-    //ds.videoMirrorCanvas.style.display = 'none';
+    ds.videoMirrorCanvas.hidden = true;
     document.body.appendChild(ds.videoMirrorCanvas);
 }
 
