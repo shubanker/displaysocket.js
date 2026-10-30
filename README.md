@@ -12,6 +12,86 @@ This library is a work in progress, and will most likely only work in modern bro
 So far the highest properly recorded transmission speed of a 1 KiB file has been about 5 kbit/s with an average speed of about 2 kbit/s with an old webcam. The unofficial record is ~13.3 kbit/s one time with a modern smartphone.
 
 ## Usage
+### Send files as raw binary (recommended)
+
+File transfers run entirely in the browser. Serve the included `dist` bundles and
+demos as static files over HTTPS (or localhost). No Node.js server, upload service,
+or runtime package is needed. Both devices must use the updated bundle for binary
+transfers; existing `send(string, name)` transfers still use the legacy protocol.
+
+```javascript
+var sender = new DisplaySocket({ output: document.getElementById('qr') });
+var file = document.getElementById('file-input').files[0];
+var info = await sender.sendFile(file, { compress: true });
+// info: originalBytes, payloadBytes, transmittedBytes, total, compression, name
+```
+
+`sendFile(fileOrBlob, options)` returns a Promise. It reads bytes directly, without
+Base64 or UTF-8 conversion of file contents. `options.name` can override the file
+name. Compression is **off by default**; `{ compress: true }` uses native gzip only
+when supported and when the result is smaller. Receiving compressed files requires
+`DecompressionStream`; turn off compression when targeting a browser without it.
+
+```javascript
+var receiver = new DisplaySocket({ video: document.getElementById('video') });
+var downloadUrl;
+receiver.addEventListener('message', function (event) {
+    // Binary messages contain a verified Blob. Legacy text messages remain strings.
+    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+    downloadUrl = event.binary ? URL.createObjectURL(event.data) : null;
+    var link = document.getElementById('download');
+    link.href = downloadUrl || event.data;
+    link.download = event.name;
+    link.hidden = false;
+});
+receiver.addEventListener('error', function (error) {
+    console.error(error.message);
+});
+// Revoke downloadUrl when the download is no longer needed or on pagehide.
+```
+
+Binary messages provide `data` (Blob), `name`, `binary: true`, `size`, `compression`,
+and `time` (milliseconds). A file is delivered only after size and SHA-256 checks.
+CRC32 detects damaged frames; frames can arrive out of order or more than once.
+These integrity checks detect corruption, **not sender authenticity or encryption**.
+
+`sliceSize` means payload **bytes** in binary mode (default 250, range 1–2925).
+Each QR also includes a 28-byte protocol header. File metadata and the SHA-256 hash
+are transmitted once per complete sequence. Raw payloads avoid Base64's roughly
+33% expansion, but small files may not be smaller overall due to metadata. Larger
+QRs are denser and can scan less reliably; tune size and interval on real devices.
+
+The protocol uses `DSB1` frames, a random transfer ID, zero-based frame index,
+frame count, payload length, and CRC32. Its reassembled stream starts with a
+big-endian 4-byte JSON metadata length, then UTF-8 metadata and raw/gzipped bytes.
+Filename and MIME type are metadata, never part of a delimiter-based binary string.
+The entire sequence repeats, so missing metadata or data frames can be received
+on later passes. Binary frames are incompatible with old receivers.
+
+Additional events:
+
+- `sliceShown`: `{ current, total }`, a **one-based** displayed frame counter.
+- `filePrepared`: the same size/compression information returned by `sendFile()`.
+- `progress`: binary events include `binary: true`, exact `total`/`found`,
+  `percent` in `[0, 1]`, zero-based `current`, and a boolean `progress` array.
+- `error`: receive/verification errors. Preparation errors reject `sendFile()`.
+
+`setQueue('0,2,7')` resends original **zero-based** frame indices; an empty or invalid
+binary queue restores all frames. `stop()` stops playback and cancels pending file
+preparation; a cancelled `sendFile()` resolves to `null` without starting playback.
+This mode supports one active incoming file at a time; it does not persist chunks
+across reloads. Files are buffered in memory. The default receive limit is 64 MiB;
+override it with `maxReceiveBytes` in the receiver constructor when appropriate.
+Decompressed size is also bounded. Use a sensible limit for the receiving device.
+
+Binary mode requires modern browser APIs: typed arrays, Blob/File `arrayBuffer()`,
+TextEncoder/TextDecoder, and Web Crypto SHA-256 (HTTPS or localhost). Compression is
+optional. Camera access still follows browser permissions and secure-context rules.
+The bundle embeds jsQR 1.4.0 for byte-preserving image decoding (Apache-2.0; license
+included in the generated decoder and bundles). No CDN, module loader, or package
+installation is needed on either device. The legacy decoder is retained in source
+for compatibility/testing; camera scanning uses jsQR.
+
 ### Send data in simplex mode
 ```
 var outputElement = document.getElementById('output'); // e.g. a div
@@ -105,6 +185,18 @@ Change to next video source.
 
 
 ## Development
+
+The checked-in distribution bundles run directly in the browser. Rebuilding them
+is optional and uses Node.js **only as a development tool**: install development
+dependencies with `npm install`, then run `npm run build`. This builds both normal
+and minified bundles without requiring certificates. The ordered source manifest
+is `scripts/sources.json`.
+
+For browser-native regression tests, serve the repository as static files over
+HTTPS or localhost and open `tests/binary.html`. The page tests real QR byte-mode
+round trips, all byte values, compressed/empty files, metadata, corrupt/missing/
+duplicate frames, receive limits, resend queues, legacy text, raster decoding,
+and both distribution bundles. It requires no Node.js test runner or camera.
 
 Run `createCerts.sh` or create your own certificates `ds.key` and `ds.crt`.
 

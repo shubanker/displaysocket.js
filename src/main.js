@@ -6,6 +6,7 @@
 /* global Writer */
 /* global Reader */
 /* global Merger */
+/* global BinaryTransfer */
 
 var utils = {}; // TODO move to own file
 // http://stackoverflow.com/a/7616484/2324209
@@ -64,6 +65,13 @@ if( ds.output ) {
 var reader = new Reader(scanResultCallback);
 var slicer = new Slicer();
 var merger = new Merger();
+var maxReceiveBytes = ctor.maxReceiveBytes === undefined ? 64 * 1024 * 1024 : ctor.maxReceiveBytes;
+if (!Number.isSafeInteger(maxReceiveBytes) || maxReceiveBytes < 0) {
+    throw new RangeError('maxReceiveBytes must be a non-negative safe integer.');
+}
+var binaryReceiver = new BinaryTransfer.Receiver(maxReceiveBytes);
+var binaryFinishing = false;
+var sendRequest = 0;
 
 // TODO proper feature detection and handling
 var performance;
@@ -79,7 +87,20 @@ if( window && window.performance ) {
 ds.startTime = null;
 ds.endTime = null;
 
-function scanResultCallback(result) {
+function writeNextSlice() {
+    writer.write(slicer.nextSlice());
+    ds.fireEvent('sliceShown', [{
+        current: slicer.getCurrentSliceIndex() + 1,
+        total: slicer.getSlices().length
+    }]);
+}
+
+function reportError(error) {
+    ds.iface.onerror(error);
+    ds.fireEvent('error', [error]);
+}
+
+function scanResultCallback(result, rawBytes) {
     if( ! ds.startTime ) {
         ds.startTime = performance.now();
     }
@@ -91,9 +112,37 @@ function scanResultCallback(result) {
         //console.log('current', current);
 
         if( result == current ) { // jshint ignore:line
-            writer.write(slicer.nextSlice());
+            writeNextSlice();
         }
         ds.reportProgress();
+        return;
+    }
+
+    if (BinaryTransfer.isFrame(rawBytes)) {
+        if (binaryFinishing || ds.finished) { return; }
+        try {
+            var received = binaryReceiver.add(rawBytes);
+            if (!received) { return; }
+            writer.write(received.index.toString());
+            ds.iface.onprogress(received.progress);
+            ds.fireEvent('progress', [received.progress]);
+            if (received.complete) {
+                binaryFinishing = true;
+                binaryReceiver.finish().then(function (message) {
+                    ds.finished = true;
+                    clearTimeout(ds.receiveLoopTimeout);
+                    message.time = performance.now() - ds.startTime;
+                    ds.iface.onmessage(message);
+                    ds.fireEvent('message', [message]);
+                }).catch(function (error) {
+                    binaryFinishing = false;
+                    binaryReceiver = new BinaryTransfer.Receiver(maxReceiveBytes);
+                    reportError(error);
+                });
+            }
+        } catch (error) {
+            reportError(error);
+        }
         return;
     }
 
@@ -122,7 +171,7 @@ ds.startRecording = function() {
 
 ds.sendLoopTimeout = null;
 ds.simplexSendLoop = function() {
-    writer.write(slicer.nextSlice());
+    writeNextSlice();
     ds.sendLoopTimeout = setTimeout(ds.simplexSendLoop, ds.sendingInterval);
 };
 
@@ -132,28 +181,46 @@ ds.duplexSend = function() {
     ds.duplexLoopTimeout = setTimeout(ds.duplexSend, ds.sendingInterval);
 };
 
-ds.iface.send = function(data,name) {
+function startSending(sender) {
     if( ! ds.output ) {
-        console.error('Tried to send data without supplying output element');
-        return;
+        throw new Error('Sending requires an output element.');
     }
     clearTimeout(ds.sendLoopTimeout);
+    clearTimeout(ds.duplexLoopTimeout);
     ds.sending = true;
-    //console.log(data);
-    slicer.setData(data,name);
+    slicer = sender;
     ds.fireEvent('sliceCountChange', [slicer.getSlices().length]);
 
     if( ds.videoElement ) {
         // sender has video specified so it's a duplex sender
 
         ds.startRecording();
-        writer.write(slicer.nextSlice());
+        writeNextSlice();
         ds.duplexSending = true;
 
         ds.duplexSend();
     } else {
         ds.simplexSendLoop();
     }
+}
+
+ds.iface.send = function(data,name) {
+    sendRequest++;
+    var sender = new Slicer();
+    sender.setData(data, name);
+    startSending(sender);
+};
+
+// Only browser APIs are used. Compression is opt-in and used only when smaller.
+ds.iface.sendFile = async function(file, options) {
+    if (!ds.output) { throw new Error('Sending requires an output element.'); }
+    ds.iface.stop();
+    var request = sendRequest;
+    var prepared = await BinaryTransfer.prepare(file, ds.sliceSize, options);
+    if (request !== sendRequest) { return null; }
+    ds.fireEvent('filePrepared', [prepared.info]);
+    startSending(prepared.sender);
+    return prepared.info;
 };
 
 ds.receiveLoop = function() {
@@ -167,6 +234,7 @@ ds.receiveLoop = function() {
 // api placeholders
 ds.iface.onmessage = function() {};
 ds.iface.onprogress = function() {};
+ds.iface.onerror = function() {};
 
 ds.receiveDone = function(message,name) {
     var e = {};
@@ -214,7 +282,9 @@ ds.iface.nextVideoSource = function() {
     }
 };
 ds.iface.stop= function() {
+    sendRequest++;
     clearTimeout(ds.sendLoopTimeout);
+    clearTimeout(ds.duplexLoopTimeout);
 }
 ds.iface.setSlice= function(value) {
     ds.sliceSize=+value||250
@@ -225,6 +295,7 @@ ds.iface.setInterval= function(value) {
 }
 ds.iface.setQueue= function(value) {
     slicer.setQueue(value);
+    if (ds.duplexSending) { writeNextSlice(); }
 }
 // event functions based on http://stackoverflow.com/a/10979055/2324209
 ds.events = {};

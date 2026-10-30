@@ -31,6 +31,12 @@ var QRCode;
 		this.data = data;
 		this.parsedData = [];
 
+		// Typed arrays are already bytes: do not UTF-8 encode or prepend a BOM.
+		if (data instanceof Uint8Array) {
+			this.parsedData = data;
+			return;
+		}
+
 		// Added to support UTF-8 Characters
 		for (var i = 0, l = this.data.length; i < l; i++) {
 			var byteArray = [];
@@ -381,8 +387,6 @@ var QRCode;
 			var nCount = oQRCode.getModuleCount();
 			var nWidth = _htOption.width / nCount;
 			var nHeight = _htOption.height / nCount;
-			var nRoundedWidth = Math.round(nWidth);
-			var nRoundedHeight = Math.round(nHeight);
 
 			_elImage.style.display = "none";
 			this.clear();
@@ -390,27 +394,14 @@ var QRCode;
 			for (var row = 0; row < nCount; row++) {
 				for (var col = 0; col < nCount; col++) {
 					var bIsDark = oQRCode.isDark(row, col);
-					var nLeft = col * nWidth;
-					var nTop = row * nHeight;
-					_oContext.strokeStyle = bIsDark ? _htOption.colorDark : _htOption.colorLight;
-					_oContext.lineWidth = 1;
+					var nLeft = Math.round(col * nWidth);
+					var nTop = Math.round(row * nHeight);
 					_oContext.fillStyle = bIsDark ? _htOption.colorDark : _htOption.colorLight;					
-					_oContext.fillRect(nLeft, nTop, nWidth, nHeight);
-					
-					// 안티 앨리어싱 방지 처리
-					_oContext.strokeRect(
-						Math.floor(nLeft) + 0.5,
-						Math.floor(nTop) + 0.5,
-						nRoundedWidth,
-						nRoundedHeight
-					);
-					
-					_oContext.strokeRect(
-						Math.ceil(nLeft) - 0.5,
-						Math.ceil(nTop) - 0.5,
-						nRoundedWidth,
-						nRoundedHeight
-					);
+					// Integer edges avoid antialiasing and overlapping strokes that can
+					// corrupt modules when the canvas size is not a module-size multiple.
+					_oContext.fillRect(nLeft, nTop,
+						Math.round((col + 1) * nWidth) - nLeft,
+						Math.round((row + 1) * nHeight) - nTop);
 				}
 			}
 			
@@ -468,9 +459,9 @@ var QRCode;
 	 */
 	function _getTypeNumber(sText, nCorrectLevel) {			
 		var nType = 1;
-		var length = _getUTF8Length(sText);
+		var length = sText instanceof Uint8Array ? sText.length : _getUTF8Length(sText);
 		
-		for (var i = 0, len = QRCodeLimitLength.length; i <= len; i++) {
+		for (var i = 0, len = QRCodeLimitLength.length; i < len; i++) {
 			var nLimit = 0;
 			
 			switch (nCorrectLevel) {
@@ -582,7 +573,7 @@ var QRCode;
 		this._oQRCode = new QRCodeModel(_getTypeNumber(sText, this._htOption.correctLevel), this._htOption.correctLevel);
 		this._oQRCode.addData(sText);
 		this._oQRCode.make();
-		this._el.title = sText;
+		this._el.title = sText instanceof Uint8Array ? 'Binary QR frame (' + sText.length + ' bytes)' : sText;
 		this._oDrawing.draw(this._oQRCode);			
 		this.makeImage();
 	};

@@ -1,19 +1,8 @@
 /* global ds */
-/* global qrcode */
+/* global jsQR */
 
 function Reader(callback) { // jshint ignore:line
     'use strict';
-
-    var callbackFunction = function(response) {
-        if(response.hasOwnProperty('error')) {
-            console.log(response.error);
-            return response.error;
-        }
-        //console.log('response', response.data);
-        callback(response.data);
-    };
-
-    qrcode.callback = callbackFunction;
 
     return {
 
@@ -24,7 +13,16 @@ function Reader(callback) { // jshint ignore:line
                 //var str = ocr(canvas);
                 //callback(str);
             } else {
-                qrcode.decode(canvas);
+                if (!canvas.width || !canvas.height) { return; }
+                var context = canvas.getContext('2d');
+                var image = context.getImageData(0, 0, canvas.width, canvas.height);
+                var result = jsQR(image.data, image.width, image.height, {
+                    inversionAttempts: 'dontInvert'
+                });
+                if (result) {
+                    var bytes = new Uint8Array(result.binaryData);
+                    callback(result.data, bytes);
+                }
             }
         }
 

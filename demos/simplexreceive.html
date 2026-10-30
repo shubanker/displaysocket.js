@@ -63,13 +63,19 @@
         video: videoElement,
       });
 
+      var downloadUrl = null;
+      window.addEventListener("pagehide", function () {
+        if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      });
       var messageFunction = function (e) {
-        console.log("received", e);
-        var uriContent = e.data;
+        if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+        downloadUrl = e.data instanceof Blob ? URL.createObjectURL(e.data) : null;
+        var uriContent = downloadUrl || e.data;
         readyButton.hidden = false;
         readyButton.href = uriContent;
         readyButton.download = e.name;
         readyButton.textContent = "Download " + e.name;
+        if (e.binary) progressBar.textContent = "Complete — SHA-256 verified. " + e.size.toLocaleString() + " bytes received.";
         readyButton.click();
       };
 
@@ -87,14 +93,18 @@
               return a;
             }, [])
             .join(",");
-        progressBar.textContent = p.found + " slices received · " +
-          (+p.total + 2) + " total · Current slice: " + p.current;
+        progressBar.textContent = p.binary && percent === 1 ? "Verifying file integrity…" :
+          p.found + " slices received · " + (p.binary ? p.total : +p.total + 2) +
+          " total · Current slice: " + p.current;
       };
 
       displaySocket.addEventListener("progress", progressFunction);
       //displaySocket.onprogress = progressFunction;
 
       displaySocket.addEventListener("message", messageFunction);
+      displaySocket.addEventListener("error", function (error) {
+        progressBar.textContent = error.message;
+      });
       //displaySocket.onmessage = messageFunction;
 
       // you can also displaySocket.removeEventListener('progress', progressFunction);

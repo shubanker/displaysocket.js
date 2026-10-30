@@ -33,9 +33,11 @@
               <span class="hint">Your file will be shown as scannable QR slices.</span>
               <input id="file-input" type="file" />
             </label>
+            <label class="compression-option" for="compress"><input id="compress" type="checkbox" checked /> Compress when it makes the file smaller</label>
+            <p class="hint" id="file-status" role="status">Choose a file. The receiver accepts up to 64 MiB by default.</p>
             <div id="toolbars" hidden>
               <div class="settings-grid">
-                <label class="field" for="sliceSize">Slice size<input type="number" min="1" step="1" id="sliceSize" value="250" /></label>
+                <label class="field" for="sliceSize">Bytes per slice<input type="number" min="1" max="2925" step="1" id="sliceSize" value="250" /></label>
                 <label class="field" for="interval">Interval (ms)<input type="number" min="1" step="1" id="interval" value="30" /></label>
                 <label class="field field-wide" for="batch">Slice batch<select id="batch"></select></label>
               </div>
@@ -62,23 +64,14 @@
       var outputElement = document.getElementById("writer-output");
       var qrCounter = document.getElementById("qr-counter");
       var totalSlices = 0;
-      // QRCode updates the output title with the encoded payload on every frame.
-      // Read its original slice index so the counter also tracks resend queues.
-      var qrObserver = new MutationObserver(function () {
-        var sliceIndex = parseInt(outputElement.title.split("/")[0], 10);
-        if (Number.isFinite(sliceIndex) && totalSlices > 0) {
-          qrCounter.textContent = (sliceIndex + 1) + "/" + totalSlices;
-        }
-      });
-      qrObserver.observe(outputElement, {
-        attributes: true,
-        attributeFilter: ["title"],
-      });
       var fileInput = document.getElementById("file-input");
       var displaySocket = new DisplaySocket({
         output: outputElement,
       });
       var batch = document.getElementById("batch");
+      displaySocket.addEventListener("sliceShown", function (slice) {
+        qrCounter.textContent = slice.current + "/" + slice.total;
+      });
       displaySocket.addEventListener("sliceCountChange", function (slice) {
         document.getElementById("sliceCount").innerText = slice;
         slice *= 1;
@@ -97,27 +90,35 @@
         document.getElementById("send-status").textContent = "Sending QR slices";
       });
 
-      /*
-        // handy if you don't want to select a file every time
-        var sendData = '';
-        for(var i = 0; i < 100; i++) {
-            sendData += i + ' ';
-        }
-        displaySocket.send(sendData);
-        /**/
-
-      fileInput.addEventListener("change", function (e) {
-        var file = e.target.files[0];
+      var preparationId = 0;
+      async function sendSelectedFile() {
+        var file = fileInput.files[0];
         if (!file) return;
-        var reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = function (e) {
-          displaySocket.send(reader.result, file.name);
-        };
-      });
+        var request = ++preparationId;
+        var status = document.getElementById("file-status");
+        document.getElementById("send-status").textContent = "Preparing file";
+        status.textContent = "Reading file and calculating its SHA-256 checksum…";
+        try {
+          var info = await displaySocket.sendFile(file, {
+            compress: document.getElementById("compress").checked,
+          });
+          if (!info || request !== preparationId) return;
+          status.textContent = info.originalBytes.toLocaleString() + " original bytes → " +
+            info.payloadBytes.toLocaleString() + " payload bytes (" +
+            (info.compression === "gzip" ? "gzip compressed" : "raw binary") + "). " +
+            info.transmittedBytes.toLocaleString() + " bytes including transfer headers.";
+        } catch (error) {
+          if (request !== preparationId) return;
+          document.getElementById("send-status").textContent = "Could not send";
+          status.textContent = error.message;
+        }
+      }
+      fileInput.addEventListener("change", sendSelectedFile);
+      document.getElementById("compress").addEventListener("change", sendSelectedFile);
       document
         .getElementById("sliceSize")
         .addEventListener("change", function (e) {
+          if (!e.target.reportValidity()) return;
           displaySocket.stop();
           displaySocket.setSlice(parseInt(e.target.value));
           fileInput.dispatchEvent(new Event("change"));
@@ -140,7 +141,7 @@
           var [start, end] = e.target.value.split("-");
           start--;
           end--;
-          for (let i = start; i < end; i++) {
+          for (let i = start; i <= end; i++) {
             op += i + ",";
           }
         }

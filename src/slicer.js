@@ -43,6 +43,7 @@ function Slicer(data) {
     setData: function (data, name) {
       slices = slice(data, name);
       queuedSlices = slices;
+      currentSlice = -1;
     },
 
     getSlices: function () {
@@ -66,6 +67,7 @@ function Slicer(data) {
       if (!queuedSlices.length || !queue) {
         queuedSlices = slices;
       }
+      currentSlice = -1;
     },
 
     getCurrentSlice: function () {
@@ -73,7 +75,7 @@ function Slicer(data) {
     },
 
     getCurrentSliceIndex: function () {
-      return currentSlice;
+      return parseInt(queuedSlices[currentSlice], 10);
     },
   };
 }

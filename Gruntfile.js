@@ -4,40 +4,7 @@ module.exports = function(grunt) {
     require('load-grunt-tasks')(grunt);
 
     var config = {
-        base: '.',
-        libs: {
-            readers: 'src/libs/readers/',
-            writers: 'src/libs/writers/',
-        }
-
-    };
-
-    var libs = {
-        jsqrcode: config.libs.readers + 'jsqrcode/src/',
-    };
-
-    var mainFiles = [
-        'src/intro.js',
-        'src/libs/writers/qrcodejs/qrcode.js',
-        'src/libs/writers/text/text.js',
-        libs.jsqrcode + 'grid.js',
-        libs.jsqrcode + 'version.js',
-        libs.jsqrcode + 'detector.js',
-        libs.jsqrcode + 'formatinf.js',
-        libs.jsqrcode + 'errorlevel.js',
-        libs.jsqrcode + 'bitmat.js',
-        libs.jsqrcode + 'datablock.js',
-        libs.jsqrcode + 'bmparser.js',
-        libs.jsqrcode + 'datamask.js',
-        libs.jsqrcode + 'rsdecoder.js',
-        libs.jsqrcode + 'gf256poly.js',
-        libs.jsqrcode + 'gf256.js',
-        libs.jsqrcode + 'decoder.js',
-        libs.jsqrcode + 'qrcode.js',
-        libs.jsqrcode + 'findpat.js',
-        libs.jsqrcode + 'alignpat.js',
-        libs.jsqrcode + 'databr.js',
-        'src/defaults.js',
+        var mainFiles = require('./scripts/sources.json');
         'src/slicer.js',
         'src/writer.js',
         'src/reader.js',
@@ -123,7 +90,14 @@ module.exports = function(grunt) {
     });
 
     grunt.registerTask('default', [ /*'watch',*/ 'connect' ]);
-    grunt.registerTask('dist', [ 'concat', 'uglify' ]);
+    grunt.registerTask('dist', function() {
+        var done = this.async();
+        require('child_process').execFile(process.execPath, ['scripts/build.mjs'], function(error, stdout, stderr) {
+            grunt.log.write(stdout);
+            if (stderr) { grunt.log.error(stderr); }
+            done(!error);
+        });
+    });
     grunt.registerTask('serve', function() {
         grunt.task.run([
             'concat',
