@@ -6,51 +6,74 @@
     <meta name="description" content="DisplaySocket.js simplex send demo" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0"
     />
-    <style>
-      @media screen and (min-width: 850px) {
-        #queueList {
-          position: absolute;
-          top: 1rem;
-          right: 1rem;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="simplex.css" />
   </head>
   <body>
-    <button onclick="displaySocket.nextVideoSource();">Next camera</button>
-    <input id="file-input" type="file" />
-    <div id="toolbars" style="display: none">
-      <input type="text" placeholder="sliceSize" id="sliceSize" value="250" />
-      <input type="text" placeholder="interval" id="interval" value="30" />
-      <span>Number of slices <span id="sliceCount">0</span></span>
-      <select id="batch"></select>
-    </div>
+    <main class="app-shell">
+      <header class="site-header">
+        <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true">▦</span>DisplaySocket<span class="badge">Demo</span></a>
+        <nav class="mode-nav" aria-label="Transfer mode">
+          <a href="simplexsend.html" aria-current="page">Send a file</a>
+          <a href="simplexreceive.html">Receive a file</a>
+        </nav>
+      </header>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">Screen to camera</p>
+        <h1 id="page-title">A new way to send.</h1>
+        <p>Turn your file into a sequence of QR codes. Open Receive on another device and point its camera at this screen.</p>
+      </section>
+      <div class="workspace">
+        <div class="stack sender-controls">
+          <section class="card" aria-labelledby="file-heading">
+            <div class="card-heading"><h2 id="file-heading"><span class="step">01</span>Choose your file</h2></div>
+            <label class="file-picker" for="file-input">
+              <strong>Select a file to get started</strong>
+              <span class="hint">Your file will be shown as scannable QR slices.</span>
+              <input id="file-input" type="file" />
+            </label>
+            <div id="toolbars" hidden>
+              <div class="settings-grid">
+                <label class="field" for="sliceSize">Slice size<input type="number" min="1" step="1" id="sliceSize" value="250" /></label>
+                <label class="field" for="interval">Interval (ms)<input type="number" min="1" step="1" id="interval" value="30" /></label>
+                <label class="field field-wide" for="batch">Slice batch<select id="batch"></select></label>
+              </div>
+              <p class="slice-summary">Number of slices: <strong id="sliceCount">0</strong></p>
+            </div>
+          </section>
+          <section class="card" id="queueList" aria-labelledby="queue-heading">
+            <div class="card-heading"><h2 id="queue-heading">Resend missing slices</h2><span class="badge">Optional</span></div>
+            <label class="field" for="pending">Pending slice numbers<textarea id="pending" rows="4" placeholder="e.g. 0, 4, 12, 23" aria-describedby="queue-hint"></textarea></label>
+            <p class="hint" id="queue-hint">Paste the pending list from the receiving device. Leave empty to send all slices.</p>
+          </section>
+        </div>
+        <section class="card sender-preview" aria-labelledby="preview-heading">
+          <div class="card-heading"><h2 id="preview-heading"><span class="step">02</span>Scan to receive</h2><span class="badge" id="send-status">Waiting for file</span></div>
+          <div class="qr-stage"><div id="writer-output" role="img" aria-label="QR code sequence for the selected file"></div></div>
+          <p class="stage-caption">Current QR: <strong class="badge" id="qr-counter">0/0</strong></p>
+          <p class="hint stage-caption">Keep this tab open and the entire QR code in view.<br />For best results, turn up your screen brightness.</p>
+        </section>
+      </div>
+      <p class="footer-note">A little screen-to-screen magic. No file upload needed.</p>
+    </main>
     <script src="../dist/displaysocket.js"></script>
-    <div style="margin: 15px; background: black" id="writer-output"></div>
-    <div id="queueList">
-      <textarea name="" id="pending" cols="30" rows="10"></textarea>
-    </div>
-    <script>
-      /*
-        // shake the output to prevent getting stuck when camera not moving
-        var outputElement = document.getElementById('writer-output');
-        setInterval(function() {
-            var a = 20;
-            outputElement.style.marginLeft = 5 + (Math.random() + a) + 'px';
-            outputElement.style.marginTop  = 5 + (Math.random() + a) + 'px';
-        }, 100);
-        */
-    </script>
     <script>
       var outputElement = document.getElementById("writer-output");
-      var size = Math.min(window.innerHeight, window.innerWidth);
-      console.log("sizes", window.innerHeight, window.innerWidth);
-      size -= parseInt(outputElement.style.margin) * 4;
-      console.log("size:", size);
-      outputElement.style.width = size + "px";
-      outputElement.style.height = size + "px";
+      var qrCounter = document.getElementById("qr-counter");
+      var totalSlices = 0;
+      // QRCode updates the output title with the encoded payload on every frame.
+      // Read its original slice index so the counter also tracks resend queues.
+      var qrObserver = new MutationObserver(function () {
+        var sliceIndex = parseInt(outputElement.title.split("/")[0], 10);
+        if (Number.isFinite(sliceIndex) && totalSlices > 0) {
+          qrCounter.textContent = (sliceIndex + 1) + "/" + totalSlices;
+        }
+      });
+      qrObserver.observe(outputElement, {
+        attributes: true,
+        attributeFilter: ["title"],
+      });
       var fileInput = document.getElementById("file-input");
       var displaySocket = new DisplaySocket({
         output: outputElement,
@@ -59,6 +82,8 @@
       displaySocket.addEventListener("sliceCountChange", function (slice) {
         document.getElementById("sliceCount").innerText = slice;
         slice *= 1;
+        totalSlices = slice;
+        qrCounter.textContent = "0/" + totalSlices;
         var batchCount = slice / 100; //Batch size of 100 each.
         batch.innerHTML = "<option value=0>All</option>";
         for (let i = 0; i < batchCount; i++) {
@@ -68,7 +93,8 @@
           option.setAttribute("value", label);
           batch.appendChild(option);
         }
-        document.getElementById("toolbars").style.display = "inline";
+        document.getElementById("toolbars").hidden = false;
+        document.getElementById("send-status").textContent = "Sending QR slices";
       });
 
       /*
@@ -82,6 +108,7 @@
 
       fileInput.addEventListener("change", function (e) {
         var file = e.target.files[0];
+        if (!file) return;
         var reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onload = function (e) {
