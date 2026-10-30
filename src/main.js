@@ -316,7 +316,7 @@ ds.iface.stop= function() {
     clearTimeout(ds.duplexLoopTimeout);
 }
 ds.iface.setSlice= function(value) {
-    ds.sliceSize=+value||250
+    ds.sliceSize=+value||210
 }
 ds.iface.setInterval= function(value) {
     ds.baseInterval=+value||30

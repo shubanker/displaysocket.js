@@ -26,7 +26,7 @@
       </section>
       <div class="workspace">
         <div class="stack sender-controls">
-          <section class="card" aria-labelledby="file-heading">
+          <section class="card" id="file-card" aria-labelledby="file-heading">
             <div class="card-heading"><h2 id="file-heading"><span class="step">01</span>Choose your file</h2></div>
             <label class="file-picker" for="file-input">
               <strong>Select a file to get started</strong>
@@ -34,17 +34,22 @@
               <input id="file-input" type="file" />
             </label>
             <label class="compression-option" for="compress"><input id="compress" type="checkbox" checked /> Compress when it makes the file smaller</label>
-            <p class="hint" id="file-status" role="status">Choose a file. The receiver accepts up to 64 MiB by default.</p>
+            <p class="hint">Choose a file. The receiver accepts up to 64 MiB by default.</p>
+          </section>
+          <section class="card" id="transfer-card" aria-labelledby="transfer-heading" hidden>
+            <div class="card-heading"><h2 id="transfer-heading">Current transfer</h2><button type="button" id="cancel-transfer">Cancel transfer</button></div>
+            <p class="hint" id="transfer-name"></p>
+            <p class="hint" id="file-status" role="status"></p>
             <div id="toolbars" hidden>
               <div class="settings-grid">
-                <label class="field" for="sliceSize">Bytes per slice<input type="number" min="1" max="2925" step="1" id="sliceSize" value="250" /></label>
+                <label class="field" for="sliceSize">Bytes per slice<input type="number" min="1" max="2925" step="1" id="sliceSize" value="210" /></label>
                 <label class="field" for="interval">Interval (ms)<input type="number" min="1" step="1" id="interval" value="30" /></label>
                 <label class="field field-wide" for="batch">Slice batch<select id="batch"></select></label>
               </div>
               <p class="slice-summary">Number of slices: <strong id="sliceCount">0</strong></p>
             </div>
           </section>
-          <section class="card" id="queueList" aria-labelledby="queue-heading">
+          <section class="card" id="queueList" aria-labelledby="queue-heading" hidden>
             <div class="card-heading"><h2 id="queue-heading">Resend missing slices</h2><span class="badge">Optional</span></div>
             <label class="field" for="pending">Pending slice numbers<textarea id="pending" rows="4" placeholder="e.g. 0, 4-12, 23" aria-describedby="queue-hint"></textarea></label>
             <p class="hint" id="queue-hint">Paste the pending list from the receiving device. Leave empty to send all slices.</p>
@@ -57,9 +62,14 @@
           </section>
         </div>
         <section class="card sender-preview" aria-labelledby="preview-heading">
-          <div class="card-heading"><h2 id="preview-heading"><span class="step">02</span>Scan to receive</h2><span class="badge" id="send-status">Waiting for file</span></div>
-          <div class="qr-stage"><div id="writer-output" role="img" aria-label="QR code sequence for the selected file"></div></div>
-          <p class="stage-caption">Current QR: <strong class="badge" id="qr-counter">0/0</strong></p>
+          <div id="qr-presentation">
+            <div class="card-heading presentation-heading">
+              <h2 id="preview-heading"><span class="step">02</span>Scan to receive</h2>
+              <div class="presentation-actions"><span class="badge" id="send-status">Waiting for file</span><button type="button" id="fullscreen-qr" aria-pressed="false">Full screen</button></div>
+            </div>
+            <div class="qr-stage"><div id="writer-output" role="img" aria-label="QR code sequence for the selected file"></div></div>
+            <p class="stage-caption">Current QR: <strong class="badge" id="qr-counter">0/0</strong></p>
+          </div>
           <p class="hint stage-caption">Keep this tab open and the entire QR code in view.<br />For best results, turn up your screen brightness.</p>
         </section>
       </div>
@@ -71,8 +81,44 @@
     <script>
       var outputElement = document.getElementById("writer-output");
       var qrCounter = document.getElementById("qr-counter");
+      var presentation = document.getElementById("qr-presentation");
+      var fullscreenButton = document.getElementById("fullscreen-qr");
+      function updateFullscreenButton() {
+        var expanded = document.fullscreenElement === presentation || presentation.classList.contains("qr-expanded");
+        fullscreenButton.textContent = expanded ? "Exit full screen" : "Full screen";
+        fullscreenButton.setAttribute("aria-pressed", String(expanded));
+      }
+      function exitExpandedQR() {
+        presentation.classList.remove("qr-expanded");
+        document.body.classList.remove("qr-fullscreen-open");
+        updateFullscreenButton();
+        fullscreenButton.focus();
+      }
+      fullscreenButton.addEventListener("click", async function () {
+        if (document.fullscreenElement === presentation) {
+          await document.exitFullscreen();
+        } else if (presentation.classList.contains("qr-expanded")) {
+          exitExpandedQR();
+        } else {
+          try {
+            if (!presentation.requestFullscreen) throw new Error("Fullscreen unavailable");
+            await presentation.requestFullscreen();
+          } catch (error) {
+            presentation.classList.add("qr-expanded");
+            document.body.classList.add("qr-fullscreen-open");
+          }
+        }
+        updateFullscreenButton();
+      });
+      document.addEventListener("fullscreenchange", updateFullscreenButton);
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && presentation.classList.contains("qr-expanded")) exitExpandedQR();
+      });
       var totalSlices = 0;
       var fileInput = document.getElementById("file-input");
+      var fileCard = document.getElementById("file-card");
+      var transferCard = document.getElementById("transfer-card");
+      var queueCard = document.getElementById("queueList");
       var displaySocket = new DisplaySocket({
         output: outputElement,
       });
@@ -108,6 +154,30 @@
       });
       document.getElementById("cancel-pending-scan").addEventListener("click", stopPendingScan);
       window.addEventListener("pagehide", function () { pendingScanner.stop(); });
+      document.getElementById("cancel-transfer").addEventListener("click", function () {
+        preparationId++;
+        displaySocket.stop();
+        pendingScanner.stop();
+        scanPanel.hidden = true;
+        scanButton.setAttribute("aria-expanded", "false");
+        scanStatus.textContent = "";
+        document.getElementById("pending").value = "";
+        fileInput.value = "";
+        totalSlices = 0;
+        qrCounter.textContent = "0/0";
+        document.getElementById("sliceCount").textContent = "0";
+        document.getElementById("toolbars").hidden = true;
+        document.getElementById("send-status").textContent = "Transfer cancelled";
+        outputElement.removeAttribute("title");
+        var canvas = outputElement.querySelector("canvas");
+        if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+        var image = outputElement.querySelector("img");
+        if (image) { image.removeAttribute("src"); image.style.display = "none"; }
+        fileCard.hidden = false;
+        transferCard.hidden = true;
+        queueCard.hidden = true;
+        fileInput.focus();
+      });
       displaySocket.addEventListener("sliceShown", function (slice) {
         qrCounter.textContent = slice.current + "/" + slice.total;
       });
@@ -126,6 +196,9 @@
           batch.appendChild(option);
         }
         document.getElementById("toolbars").hidden = false;
+        fileCard.hidden = true;
+        transferCard.hidden = false;
+        queueCard.hidden = false;
         document.getElementById("send-status").textContent = "Sending QR slices";
       });
 
@@ -134,6 +207,11 @@
         var file = fileInput.files[0];
         if (!file) return;
         var request = ++preparationId;
+        fileCard.hidden = true;
+        transferCard.hidden = false;
+        queueCard.hidden = true;
+        document.getElementById("toolbars").hidden = true;
+        document.getElementById("transfer-name").textContent = file.name;
         pendingScanner.stop();
         scanPanel.hidden = true;
         scanButton.setAttribute("aria-expanded", "false");
@@ -146,14 +224,13 @@
             compress: document.getElementById("compress").checked,
           });
           if (!info || request !== preparationId) return;
-          status.textContent = info.originalBytes.toLocaleString() + " original bytes → " +
-            info.payloadBytes.toLocaleString() + " payload bytes (" +
-            (info.compression === "gzip" ? "gzip compressed" : "raw binary") + "). " +
-            info.transmittedBytes.toLocaleString() + " bytes including transfer headers.";
+          status.textContent = "";
         } catch (error) {
           if (request !== preparationId) return;
           document.getElementById("send-status").textContent = "Could not send";
           status.textContent = error.message;
+          fileCard.hidden = false;
+          queueCard.hidden = true;
         }
       }
       fileInput.addEventListener("change", sendSelectedFile);

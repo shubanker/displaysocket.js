@@ -15,7 +15,7 @@ var ds = {
 
 ds.finished = false;
 
-ds.sliceSize = ctor.sliceSize || 250;
+ds.sliceSize = ctor.sliceSize || 210;
 ds.baseInterval = ctor.baseInterval || 30;
 ds.scanningInterval = ctor.scanningInterval || ds.baseInterval;
 ds.sendingInterval = ctor.sendingInterval || ds.baseInterval * 4;

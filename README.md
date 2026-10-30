@@ -55,7 +55,7 @@ and `time` (milliseconds). A file is delivered only after size and SHA-256 check
 CRC32 detects damaged frames; frames can arrive out of order or more than once.
 These integrity checks detect corruption, **not sender authenticity or encryption**.
 
-`sliceSize` means payload **bytes** in binary mode (default 250, range 1–2925).
+`sliceSize` means payload **bytes** in binary mode (default 210, range 1–2925).
 Each QR also includes a 28-byte protocol header. File metadata and the SHA-256 hash
 are transmitted once per complete sequence. Raw payloads avoid Base64's roughly
 33% expansion, but small files may not be smaller overall due to metadata. Larger
@@ -141,7 +141,7 @@ var outputElement = document.getElementById('output'); // e.g. a div
 var ds = new DisplaySocket({
     output: outputElement,
     // optionally (values are default values)
-    sliceSize: 250, // Send roughly 250 characters with each slice
+    sliceSize: 210, // Send roughly 210 characters with each slice
     baseInterval: 30 // Scanning speed. Writes 4 times slower.
 });
 ds.send(data);
@@ -183,7 +183,7 @@ Element to which the QR-code, text or other method gets written or drawn.
 `sliceSize`
 
 Sets the amount of characters to be input in the output method at one time.
-Defaults to 250 characters.
+Defaults to 210 characters.
 
 
 `videoMirrorCanvas`
