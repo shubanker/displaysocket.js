@@ -292,6 +292,20 @@
             assert(info.originalBytes === 0 && info.total > 0);
             element.remove();
         });
+        await load('demos/pending.js');
+        await test('Pending QR compact ranges, plain lists, zero index, and 100-number cap', async function () {
+            assert(PendingFeedback.encode([4, 6, 7, 8]) === 'pending:4,6-8');
+            assert(PendingFeedback.decode('pending:0,4,6,7,8', 10).join(',') === '0,4,6,7,8');
+            assert(PendingFeedback.decode('pending:4,6-8', 10).join(',') === '4,6,7,8');
+            var large = Array.from({ length: 150 }, function (_, i) { return i * 2; });
+            var capped = PendingFeedback.decode(PendingFeedback.encode(large), 300);
+            assert(capped.length === 100 && capped[99] === 198);
+            var empty = PendingFeedback.encode([]);
+            await rejects(function () { PendingFeedback.decode(empty, 10); }, /no missing/);
+            for (var invalid of ['other:4', 'pending:0-100', 'pending:9-2', 'pending:-1', 'pending:4,', 'pending:10']) {
+                await rejects(function () { PendingFeedback.decode(invalid, 10); }, /pending|indices/);
+            }
+        });
     } catch (error) {
         failures++;
         lines.push('SETUP FAILURE: ' + error.message);

@@ -48,6 +48,12 @@
             <div class="card-heading"><h2 id="queue-heading">Resend missing slices</h2><span class="badge">Optional</span></div>
             <label class="field" for="pending">Pending slice numbers<textarea id="pending" rows="4" placeholder="e.g. 0, 4, 12, 23" aria-describedby="queue-hint"></textarea></label>
             <p class="hint" id="queue-hint">Paste the pending list from the receiving device. Leave empty to send all slices.</p>
+            <button type="button" id="scan-pending" aria-expanded="false" aria-controls="pending-scanner">Scan pending</button>
+            <div id="pending-scanner" hidden>
+              <div class="camera-stage pending-camera"><video id="pending-video" autoplay muted playsinline aria-label="Camera for scanning pending slices"></video></div>
+              <button type="button" id="cancel-pending-scan">Cancel scan</button>
+            </div>
+            <p class="hint" id="scan-pending-status" role="status"></p>
           </section>
         </div>
         <section class="card sender-preview" aria-labelledby="preview-heading">
@@ -60,6 +66,8 @@
       <p class="footer-note">A little screen-to-screen magic. No file upload needed.</p>
     </main>
     <script src="../dist/displaysocket.js"></script>
+    <script src="../dist/jsqr.js"></script>
+    <script src="pending.js"></script>
     <script>
       var outputElement = document.getElementById("writer-output");
       var qrCounter = document.getElementById("qr-counter");
@@ -69,6 +77,37 @@
         output: outputElement,
       });
       var batch = document.getElementById("batch");
+      var scanButton = document.getElementById("scan-pending");
+      var scanPanel = document.getElementById("pending-scanner");
+      var scanStatus = document.getElementById("scan-pending-status");
+      var pendingScanner = new PendingFeedback.Scanner(document.getElementById("pending-video"), function (text) {
+        try {
+          var indices = PendingFeedback.decode(text, totalSlices);
+          document.getElementById("pending").value = indices.join(",");
+          displaySocket.setQueue(indices.join(","));
+          batch.value = "0";
+          stopPendingScan();
+          scanStatus.textContent = "Resending " + indices.length + " scanned slices. Scan again for the next group.";
+          return true;
+        } catch (error) {
+          scanStatus.textContent = error.message;
+          return false;
+        }
+      }, function (message) { scanStatus.textContent = message; });
+      function stopPendingScan() {
+        pendingScanner.stop();
+        scanPanel.hidden = true;
+        scanButton.setAttribute("aria-expanded", "false");
+        scanButton.focus();
+      }
+      scanButton.addEventListener("click", function () {
+        if (!totalSlices) { scanStatus.textContent = "Select a file before scanning pending slices."; return; }
+        scanPanel.hidden = false;
+        scanButton.setAttribute("aria-expanded", "true");
+        pendingScanner.start();
+      });
+      document.getElementById("cancel-pending-scan").addEventListener("click", stopPendingScan);
+      window.addEventListener("pagehide", function () { pendingScanner.stop(); });
       displaySocket.addEventListener("sliceShown", function (slice) {
         qrCounter.textContent = slice.current + "/" + slice.total;
       });
@@ -95,6 +134,10 @@
         var file = fileInput.files[0];
         if (!file) return;
         var request = ++preparationId;
+        pendingScanner.stop();
+        scanPanel.hidden = true;
+        scanButton.setAttribute("aria-expanded", "false");
+        document.getElementById("pending").value = "";
         var status = document.getElementById("file-status");
         document.getElementById("send-status").textContent = "Preparing file";
         status.textContent = "Reading file and calculating its SHA-256 checksum…";

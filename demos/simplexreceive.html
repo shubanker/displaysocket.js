@@ -47,17 +47,44 @@
             <p class="hint">Transfer stuck? Copy these slice numbers into the sender’s pending list to send just the missing pieces.</p>
             <div id="pendingItems" class="pending-items" aria-label="Pending slice numbers"></div>
             <p class="hint" id="copy-status" role="status"></p>
+            <div id="pending-qr-section" hidden>
+              <h3>Scan pending slices</h3>
+              <div class="pending-qr" id="pending-qr" role="img" aria-label="QR code containing up to 100 missing slice numbers"></div>
+              <p class="hint" id="pending-qr-status"></p>
+              <p class="hint">On the sender, choose Scan pending. Consecutive numbers are compacted into ranges. Scan again after these slices arrive for the next group.</p>
+            </div>
           </section>
         </div>
       </div>
       <p class="footer-note">A little screen-to-screen magic. No file upload needed.</p>
     </main>
     <script src="../dist/displaysocket.js"></script>
+    <script src="../src/libs/writers/qrcodejs/qrcode.js"></script>
+    <script src="pending.js"></script>
     <script>
       var videoElement = document.getElementById("video");
       var readyButton = document.getElementById("ready-button");
       var progressBar = document.getElementById("progress");
       var pendingItems = document.getElementById("pendingItems");
+      var pendingQRCode = null;
+      var pendingQRTimer = null;
+      var pendingQRValue = "";
+      var pendingNumbers = [];
+
+      function updatePendingQR() {
+        pendingQRTimer = null;
+        document.getElementById("pending-qr-section").hidden = !pendingNumbers.length;
+        if (!pendingNumbers.length) { pendingQRValue = ""; return; }
+        var value = PendingFeedback.encode(pendingNumbers.slice(0, 100));
+        document.getElementById("pending-qr-status").textContent =
+          "Contains " + Math.min(100, pendingNumbers.length) + " of " + pendingNumbers.length + " missing slices (zero-based).";
+        if (value === pendingQRValue) return;
+        if (!pendingQRCode) pendingQRCode = new QRCode(document.getElementById("pending-qr"), {
+          width: 320, height: 320, correctLevel: QRCode.CorrectLevel.L,
+        });
+        pendingQRCode.makeCode(value);
+        pendingQRValue = value;
+      }
 
       var displaySocket = new DisplaySocket({
         video: videoElement,
@@ -68,6 +95,10 @@
         if (downloadUrl) URL.revokeObjectURL(downloadUrl);
       });
       var messageFunction = function (e) {
+        pendingNumbers = [];
+        pendingItems.textContent = "";
+        clearTimeout(pendingQRTimer);
+        updatePendingQR();
         if (downloadUrl) URL.revokeObjectURL(downloadUrl);
         downloadUrl = e.data instanceof Blob ? URL.createObjectURL(e.data) : null;
         var uriContent = downloadUrl || e.data;
@@ -85,14 +116,18 @@
         document.getElementById("transfer-progress").value = percent;
         document.getElementById("progress-percent").textContent =
           (percent * 100).toFixed(2) + "%";
-        pendingItems.textContent = progress
-            .reduce((a, curr, i) => {
-              if (!curr) {
-                a.push(i);
-              }
-              return a;
-            }, [])
-            .join(",");
+        pendingNumbers = [];
+        for (var i = 0; i < progress.length; i++) {
+          if (!progress[i]) pendingNumbers.push(i);
+        }
+        pendingItems.textContent = pendingNumbers.join(",");
+        // Keep a QR stable for a moment so the sending camera can acquire it.
+        if (!pendingNumbers.length) {
+          clearTimeout(pendingQRTimer);
+          updatePendingQR();
+        } else if (!pendingQRTimer) {
+          pendingQRTimer = setTimeout(updatePendingQR, 1000);
+        }
         progressBar.textContent = p.binary && percent === 1 ? "Verifying file integrity…" :
           p.found + " slices received · " + (p.binary ? p.total : +p.total + 2) +
           " total · Current slice: " + p.current;

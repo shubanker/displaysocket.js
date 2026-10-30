@@ -68,6 +68,16 @@ Filename and MIME type are metadata, never part of a delimiter-based binary stri
 The entire sequence repeats, so missing metadata or data frames can be received
 on later passes. Binary frames are incompatible with old receivers.
 
+The simplex demos also support camera-based missing-slice feedback. The receiver
+shows a QR below **Missing slices**, containing at most the first 100 missing
+zero-based indices. On the sender, select **Scan pending**, allow camera access,
+and scan that QR to update the resend queue automatically. The camera stops after
+a successful scan or cancellation. Consecutive indices use compact ranges, e.g.
+`pending:4,6-8`; plain `pending:4,6,7,8` is accepted too. No gzip or Base64 is
+needed for this short feedback message. If more than 100 slices are missing,
+receive the current group, then scan the updated QR again. Make sure both devices
+are working on the same file: the short feedback message does not carry a file ID.
+
 Additional events:
 
 - `sliceShown`: `{ current, total }`, a **one-based** displayed frame counter.
