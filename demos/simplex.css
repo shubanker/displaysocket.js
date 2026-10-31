@@ -18,8 +18,11 @@ button, .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 46px;
-  padding: 11px 18px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
   border: 1px solid var(--border);
   background: #fff;
   color: #203c3a;
@@ -72,7 +75,7 @@ textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, monospac
 #writer-output canvas, #writer-output img, #writer-output svg { max-width: 100%; height: auto; }
 .stage-caption { text-align: center; }
 .presentation-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-#fullscreen-qr { min-height: 36px; padding: 7px 10px; font-size: 12px; }
+#fullscreen-qr { min-height: 28px; padding: 4px 10px; font-size: 12px; }
 .qr-fullscreen-open { overflow: hidden; }
 #qr-presentation:fullscreen, #qr-presentation.qr-expanded {
   width: 100%; height: 100%; padding: 16px;
@@ -117,6 +120,12 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 10px; }
 #pending-video { display: block; width: 100%; height: 100%; object-fit: cover; }
 #ready-button { width: 100%; margin-top: 18px; }
 .footer-note { margin: 28px 0 0; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.7; }
+@media (max-width: 759px) {
+  .sender-preview { grid-row: 1; }
+  .sender-controls { display: contents; }
+  #queueList { grid-row: 2; }
+  #transfer-card { grid-row: 3; }
+}
 @media (min-width: 760px) {
   .app-shell { padding: 36px 32px 48px; }
   .site-header { margin-bottom: 48px; }
@@ -124,6 +133,16 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 10px; }
   .card { padding: 26px; }
   .sender-controls { grid-column: 2; grid-row: 1; }
   .sender-preview { grid-column: 1; grid-row: 1; }
+  .workspace:has(> #sender-preview[hidden]) .sender-controls {
+    grid-column: 1 / -1;
+    width: min(100%, 480px);
+    justify-self: center;
+  }
+  .workspace:has(> #receive-details[hidden]) > .card {
+    grid-column: 1 / -1;
+    width: min(100%, 580px);
+    justify-self: center;
+  }
 }
 @media (max-width: 359px) {
   .mode-nav { width: 100%; }

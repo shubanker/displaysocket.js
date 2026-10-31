@@ -12,16 +12,22 @@ function Writer(outputElement, method) { // jshint ignore:line
             chosenWriterFunction = textWriter.write;
             break;
         default:
-            var qrcode = new QRCode(outputElement, {
-                text: '',
-                width: outputElement.offsetWidth,
-                height: outputElement.offsetHeight,
-                colorDark: '#000000',
-                colorLight: '#ffffff',
-                correctLevel: QRCode.CorrectLevel.L
-            });
-            chosenWriter = qrcode;
-            chosenWriterFunction = qrcode.makeCode;
+            var qrcode;
+            chosenWriterFunction = function(text) {
+                // Sender previews may be hidden until a transfer starts.
+                // Measure only when writing, after the preview is revealed.
+                if (!qrcode) {
+                    qrcode = new QRCode(outputElement, {
+                        text: '',
+                        width: outputElement.offsetWidth || 256,
+                        height: outputElement.offsetHeight || 256,
+                        colorDark: '#000000',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.L
+                    });
+                }
+                qrcode.makeCode(text);
+            };
             break;
     }
 

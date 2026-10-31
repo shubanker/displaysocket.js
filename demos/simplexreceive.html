@@ -34,7 +34,7 @@
           <div class="camera-actions"><button type="button" onclick="displaySocket.nextVideoSource();">Switch camera</button></div>
           <p class="hint stage-caption">Fit the entire QR code inside the camera view.<br />Camera access requires HTTPS or localhost.</p>
         </section>
-        <div class="stack">
+        <div class="stack" id="receive-details" hidden>
           <section class="card" aria-labelledby="progress-heading">
             <div class="card-heading"><h2 id="progress-heading"><span class="step">02</span>Transfer progress</h2></div>
             <p class="progress-value" id="progress-percent">0.00%</p>
@@ -105,7 +105,10 @@
           cleared: "Saved progress discarded. Waiting for QR codes…",
         };
         document.getElementById("checkpoint-status").textContent = status.message || messages[status.state];
-        if (status.state === "cleared") progressFunction({ binary: true, progress: [], percent: 0, found: 0, total: 0, current: 0 });
+        if (status.state === "cleared") {
+          document.getElementById("receive-details").hidden = true;
+          progressFunction({ binary: true, progress: [], percent: 0, found: 0, total: 0, current: 0 });
+        }
       });
       document.getElementById("discard-checkpoint").addEventListener("click", async function () {
         if (!window.confirm("Discard received slices saved on this browser?")) return;
@@ -135,6 +138,9 @@
 
       var progressFunction = function (p) {
         var progress = p.progress;
+        // Keep transfer details visible through temporary gaps in QR detection.
+        // Only explicitly discarding saved progress returns to the initial view.
+        if (p.total > 0) document.getElementById("receive-details").hidden = false;
         var percent = Math.max(0, Math.min(1, p.percent || 0));
         document.getElementById("transfer-progress").value = percent;
         document.getElementById("progress-percent").textContent =

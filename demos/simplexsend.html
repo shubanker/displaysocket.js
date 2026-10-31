@@ -61,7 +61,7 @@
             <p class="hint" id="scan-pending-status" role="status"></p>
           </section>
         </div>
-        <section class="card sender-preview" aria-labelledby="preview-heading">
+        <section class="card sender-preview" id="sender-preview" aria-labelledby="preview-heading" hidden>
           <div id="qr-presentation">
             <div class="card-heading presentation-heading">
               <h2 id="preview-heading"><span class="step">02</span>Scan to receive</h2>
@@ -168,6 +168,7 @@
         document.getElementById("sliceCount").textContent = "0";
         document.getElementById("toolbars").hidden = true;
         document.getElementById("send-status").textContent = "Transfer cancelled";
+        document.getElementById("sender-preview").hidden = true;
         outputElement.removeAttribute("title");
         var canvas = outputElement.querySelector("canvas");
         if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
@@ -200,6 +201,7 @@
         transferCard.hidden = false;
         queueCard.hidden = false;
         document.getElementById("send-status").textContent = "Sending QR slices";
+        document.getElementById("sender-preview").hidden = false;
       });
 
       var preparationId = 0;
@@ -218,6 +220,7 @@
         document.getElementById("pending").value = "";
         var status = document.getElementById("file-status");
         document.getElementById("send-status").textContent = "Preparing file";
+        document.getElementById("sender-preview").hidden = true;
         status.textContent = "Reading file and calculating its SHA-256 checksum…";
         try {
           var info = await displaySocket.sendFile(file, {
@@ -228,6 +231,7 @@
         } catch (error) {
           if (request !== preparationId) return;
           document.getElementById("send-status").textContent = "Could not send";
+          document.getElementById("sender-preview").hidden = true;
           status.textContent = error.message;
           fileCard.hidden = false;
           queueCard.hidden = true;
